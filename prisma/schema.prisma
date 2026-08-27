@@ -1,0 +1,32 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Return {
+  id            String    @id @default(cuid())
+  returnRef     String    @unique
+  orderNumber   String
+  productName   String
+  sku           String
+  customerName  String
+  reason        String
+  status        String    @default("RECEIVED")
+  receivedDate  DateTime
+  completedDate DateTime?
+  operatorNotes String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([reason])
+  @@index([receivedDate])
+  @@index([orderNumber])
+}
