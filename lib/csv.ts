@@ -75,11 +75,22 @@ export function parseCsvToRecords(text: string): {
   return { headers, records };
 }
 
+// Characters that spreadsheet apps (Excel, Sheets, LibreOffice) treat as the
+// start of a formula. A cell beginning with one of these, if it originated
+// from user-controlled data, is a CSV-injection vector — prefix it with a
+// single quote so the value is rendered as literal text on open.
+const FORMULA_TRIGGERS = ["=", "+", "-", "@", "\t", "\r"];
+
+function neutralizeFormula(value: string): string {
+  return FORMULA_TRIGGERS.includes(value[0] ?? "") ? `'${value}` : value;
+}
+
 function escapeCsvField(value: string): string {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const safe = neutralizeFormula(value);
+  if (/[",\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safe;
 }
 
 /** Serializes an array of objects into CSV text using the given column order. */

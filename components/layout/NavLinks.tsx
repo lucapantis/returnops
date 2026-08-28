@@ -9,14 +9,24 @@ const LINKS = [
   { href: "/returns/import", label: "Import CSV", icon: ImportIcon },
 ];
 
+function matchesPath(href: string, pathname: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+
+  // "Most specific link wins" so e.g. /returns/import highlights only the
+  // Import CSV entry, not Returns as well.
+  const activeHref = LINKS.map((l) => l.href)
+    .filter((href) => matchesPath(href, pathname))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <nav className="flex flex-col gap-1 px-3">
       {LINKS.map((link) => {
-        const isActive =
-          link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+        const isActive = link.href === activeHref;
         const Icon = link.icon;
         return (
           <Link

@@ -80,7 +80,7 @@ export default async function ReturnDetailPage({
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5 text-xs text-slate-400">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 text-xs text-slate-500">
             Created {formatDateTime(r.createdAt)} · Last updated {formatDateTime(r.updatedAt)}
           </section>
         </div>

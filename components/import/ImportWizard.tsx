@@ -173,7 +173,7 @@ export function ImportWizard() {
               onChange={onFileInputChange}
             />
           </label>
-          {fileName && <p className="mt-3 text-xs text-slate-400">{fileName}</p>}
+          {fileName && <p className="mt-3 text-xs text-slate-500">{fileName}</p>}
         </section>
       )}
 

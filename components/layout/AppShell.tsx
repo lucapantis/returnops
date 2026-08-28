@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { NavLinks } from "./NavLinks";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMobileOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
 
   return (
     <div className="flex min-h-screen">
@@ -15,14 +24,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mt-4 flex-1">
           <NavLinks />
         </div>
-        <div className="border-t border-slate-200 p-4 text-xs text-slate-400">
+        <div className="border-t border-slate-200 p-4 text-xs text-slate-500">
           ReturnOps MVP · fictional demo data
         </div>
       </aside>
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <button
             aria-label="Close navigation"
             className="absolute inset-0 bg-slate-900/40"

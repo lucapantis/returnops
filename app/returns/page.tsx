@@ -4,7 +4,7 @@ import { ReturnsFilters } from "@/components/returns/ReturnsFilters";
 import { ReturnsTable } from "@/components/returns/ReturnsTable";
 import { Pagination } from "@/components/returns/Pagination";
 import { EmptyState, ErrorState } from "@/components/ui/States";
-import { listReturns } from "@/lib/returnsQuery";
+import { listReturns, type ListReturnsResult } from "@/lib/returnsQuery";
 import { listReturnsQuerySchema } from "@/lib/validation";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -36,7 +36,7 @@ export default async function ReturnsPage({
     );
   }
 
-  let result;
+  let result: ListReturnsResult;
   try {
     result = await listReturns(parsed.data);
   } catch {

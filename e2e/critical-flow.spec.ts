@@ -52,6 +52,13 @@ test.describe("ReturnOps critical flow", () => {
     await expect(page.getByRole("button", { name: "Move to Rejected" })).toBeVisible();
   });
 
+  test("navigation highlights only the most specific active section", async ({ page }) => {
+    await page.goto("/returns/import");
+    const current = page.locator('nav a[aria-current="page"]');
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveText(/Import CSV/);
+  });
+
   test("returns can be bulk imported from a CSV file", async ({ page }) => {
     const returnRef = `RET-E2E-${runId}`;
     const csv = [

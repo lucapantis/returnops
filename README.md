@@ -130,6 +130,11 @@ A three-step wizard:
 Required columns: `returnRef, orderNumber, productName, sku, customerName,
 reason, status, receivedDate`. Optional: `completedDate, operatorNotes`.
 
+Imports are capped at 5,000 rows / 5 MB per file. On export, any cell whose
+value begins with a spreadsheet formula trigger (`= + - @`, tab, CR) is
+prefixed with a single quote so a return record can't smuggle a formula into
+a downstream spreadsheet (CSV injection).
+
 ## Architecture decisions
 
 - **No native SQLite enums.** `status` and `reason` are stored as plain
@@ -184,9 +189,14 @@ collides with itself or the seed data.
   available at the current Prisma 7.10.x line.
 - No optimistic concurrency control on edits — a "last write wins" model is
   fine for a single-user local MVP but wouldn't be for concurrent multi-user
-  use.
-- CSV import is capped at 5,000 rows per file (`lib/importDb.ts`) to keep a
-  single import within one database transaction.
+  use. A concurrent create that loses a `returnRef` race is surfaced as a
+  clean `409`, not a crash.
+- CSV import is capped at 5,000 rows / 5 MB per file (`lib/importDb.ts`) to
+  keep a single import within one database transaction.
+- CSV export is capped at 20,000 rows.
+- The dashboard charts are rendered with Recharts (SVG) and are not fully
+  screen-reader accessible; the same figures are shown as data labels on
+  every bar.
 
 ## Project structure
 

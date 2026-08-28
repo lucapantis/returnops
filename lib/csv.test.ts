@@ -81,6 +81,32 @@ describe("toCsv", () => {
     expect(csv).toBe("Note\n\n");
   });
 
+  it("neutralizes leading formula characters (CSV injection)", () => {
+    const csv = toCsv(
+      [{ key: "note", header: "Note" }],
+      [
+        { note: "=1+1" },
+        { note: "+49123" },
+        { note: "-2+3" },
+        { note: "@SUM(A1:A2)" },
+        { note: "safe value" },
+      ]
+    );
+    const rows = parseCsv(csv);
+    expect(rows.slice(1)).toEqual([
+      ["'=1+1"],
+      ["'+49123"],
+      ["'-2+3"],
+      ["'@SUM(A1:A2)"],
+      ["safe value"],
+    ]);
+  });
+
+  it("neutralizes a formula even when the field also needs quoting", () => {
+    const csv = toCsv([{ key: "note", header: "Note" }], [{ note: "=HYPERLINK(x), y" }]);
+    expect(csv).toBe("Note\n\"'=HYPERLINK(x), y\"\n");
+  });
+
   it("round-trips through parseCsv", () => {
     const csv = toCsv(
       [

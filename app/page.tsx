@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { computeMetrics } from "@/lib/metrics";
+import { computeMetrics, type DashboardMetrics } from "@/lib/metrics";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { StatusBarChart } from "@/components/dashboard/StatusBarChart";
@@ -11,7 +11,7 @@ import { STATUS_LABELS } from "@/lib/constants";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  let metrics;
+  let metrics: DashboardMetrics;
   try {
     const records = await prisma.return.findMany({
       select: { status: true, reason: true, receivedDate: true, completedDate: true },

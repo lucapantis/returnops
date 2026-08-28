@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { serializeReturn } from "@/lib/serialize";
 import { updateReturnSchema } from "@/lib/validation";
 import { isValidTransition, type ReturnStatus } from "@/lib/constants";
+import { handleApiError } from "@/lib/apiError";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -10,13 +11,18 @@ interface RouteParams {
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
-  const record = await prisma.return.findUnique({ where: { id } });
 
-  if (!record) {
-    return NextResponse.json({ error: "Return not found" }, { status: 404 });
+  try {
+    const record = await prisma.return.findUnique({ where: { id } });
+
+    if (!record) {
+      return NextResponse.json({ error: "Return not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ data: serializeReturn(record) });
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  return NextResponse.json({ data: serializeReturn(record) });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
@@ -37,49 +43,74 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const existing = await prisma.return.findUnique({ where: { id } });
-  if (!existing) {
-    return NextResponse.json({ error: "Return not found" }, { status: 404 });
-  }
-
   const data = parsed.data;
 
-  if (data.status && data.status !== existing.status) {
-    const from = existing.status as ReturnStatus;
-    if (!isValidTransition(from, data.status)) {
+  try {
+    const existing = await prisma.return.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Return not found" }, { status: 404 });
+    }
+
+    if (data.status && data.status !== existing.status) {
+      const from = existing.status as ReturnStatus;
+      if (!isValidTransition(from, data.status)) {
+        return NextResponse.json(
+          {
+            error: `Cannot transition status from ${existing.status} to ${data.status}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Moving into COMPLETED without an explicit completedDate stamps "now".
+    let completedDate = data.completedDate;
+    if (data.status === "COMPLETED" && completedDate === undefined && !existing.completedDate) {
+      completedDate = new Date();
+    }
+    // Moving out of a terminal state (e.g. APPROVED -> INSPECTING) clears it.
+    if (data.status && data.status !== "COMPLETED" && completedDate === undefined) {
+      completedDate = null;
+    }
+
+    // Guard the same invariant the create/import schemas enforce: a COMPLETED
+    // record must always carry a completedDate. This catches e.g. an edit that
+    // clears the date while leaving the status COMPLETED.
+    const effectiveStatus = data.status ?? existing.status;
+    const effectiveCompletedDate =
+      completedDate !== undefined ? completedDate : existing.completedDate;
+    if (effectiveStatus === "COMPLETED" && effectiveCompletedDate == null) {
       return NextResponse.json(
         {
-          error: `Cannot transition status from ${existing.status} to ${data.status}`,
+          error: "Validation failed",
+          issues: [
+            {
+              path: ["completedDate"],
+              message: "Completed date is required when status is COMPLETED",
+            },
+          ],
         },
         { status: 400 }
       );
     }
-  }
 
-  // Moving into COMPLETED without an explicit completedDate stamps "now".
-  let completedDate = data.completedDate;
-  if (data.status === "COMPLETED" && completedDate === undefined && !existing.completedDate) {
-    completedDate = new Date();
-  }
-  // Moving out of a terminal state (e.g. APPROVED -> INSPECTING) clears it.
-  if (data.status && data.status !== "COMPLETED" && completedDate === undefined) {
-    completedDate = null;
-  }
+    const updated = await prisma.return.update({
+      where: { id },
+      data: {
+        ...(data.orderNumber !== undefined ? { orderNumber: data.orderNumber } : {}),
+        ...(data.productName !== undefined ? { productName: data.productName } : {}),
+        ...(data.sku !== undefined ? { sku: data.sku } : {}),
+        ...(data.customerName !== undefined ? { customerName: data.customerName } : {}),
+        ...(data.reason !== undefined ? { reason: data.reason } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.receivedDate !== undefined ? { receivedDate: data.receivedDate } : {}),
+        ...(completedDate !== undefined ? { completedDate } : {}),
+        ...(data.operatorNotes !== undefined ? { operatorNotes: data.operatorNotes } : {}),
+      },
+    });
 
-  const updated = await prisma.return.update({
-    where: { id },
-    data: {
-      ...(data.orderNumber !== undefined ? { orderNumber: data.orderNumber } : {}),
-      ...(data.productName !== undefined ? { productName: data.productName } : {}),
-      ...(data.sku !== undefined ? { sku: data.sku } : {}),
-      ...(data.customerName !== undefined ? { customerName: data.customerName } : {}),
-      ...(data.reason !== undefined ? { reason: data.reason } : {}),
-      ...(data.status !== undefined ? { status: data.status } : {}),
-      ...(data.receivedDate !== undefined ? { receivedDate: data.receivedDate } : {}),
-      ...(completedDate !== undefined ? { completedDate } : {}),
-      ...(data.operatorNotes !== undefined ? { operatorNotes: data.operatorNotes } : {}),
-    },
-  });
-
-  return NextResponse.json({ data: serializeReturn(updated) });
+    return NextResponse.json({ data: serializeReturn(updated) });
+  } catch (error) {
+    return handleApiError(error);
+  }
 }

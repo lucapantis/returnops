@@ -2,6 +2,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "./prisma";
 import { serializeReturn, type ReturnDto } from "./serialize";
 import type { ListReturnsQuery } from "./validation";
+import { endOfDayUtc } from "./dateRange";
 
 export function buildReturnsWhere(
   query: Pick<ListReturnsQuery, "search" | "status" | "reason" | "dateFrom" | "dateTo">
@@ -14,7 +15,10 @@ export function buildReturnsWhere(
   if (query.dateFrom || query.dateTo) {
     where.receivedDate = {
       ...(query.dateFrom ? { gte: query.dateFrom } : {}),
-      ...(query.dateTo ? { lte: query.dateTo } : {}),
+      // A "YYYY-MM-DD" dateTo coerces to that day at 00:00, which would
+      // exclude every record received later that same day. Treat the range
+      // as inclusive of the whole end day.
+      ...(query.dateTo ? { lte: endOfDayUtc(query.dateTo) } : {}),
     };
   }
 

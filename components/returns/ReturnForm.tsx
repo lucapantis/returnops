@@ -226,7 +226,7 @@ export function ReturnForm({ existing }: { existing?: ReturnDto }) {
             ))}
           </select>
           {isEdit && (
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-slate-500">
               Only valid workflow transitions from the current status are shown.
             </p>
           )}
@@ -251,7 +251,7 @@ export function ReturnForm({ existing }: { existing?: ReturnDto }) {
             onChange={(e) => set("completedDate", e.target.value)}
             className={inputClass(fieldErrors.completedDate)}
           />
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-slate-500">
             Required once status is Completed. Auto-filled if left blank.
           </p>
         </Field>

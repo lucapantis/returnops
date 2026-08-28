@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseCsvToRecords } from "@/lib/csv";
-import { validateImportRows } from "@/lib/import";
-import { loadExistingKeys, MAX_IMPORT_ROWS } from "@/lib/importDb";
+import { prepareImport } from "@/lib/importDb";
+import { handleApiError } from "@/lib/apiError";
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -11,29 +10,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const csvText = (body as { csvText?: unknown })?.csvText;
-  if (typeof csvText !== "string" || csvText.trim().length === 0) {
-    return NextResponse.json({ error: "csvText is required" }, { status: 400 });
+  try {
+    const prepared = await prepareImport((body as { csvText?: unknown })?.csvText);
+    if (!prepared.ok) {
+      return NextResponse.json({ error: prepared.error }, { status: prepared.status });
+    }
+
+    return NextResponse.json({ data: prepared.result });
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  const { headers, records } = parseCsvToRecords(csvText);
-
-  if (records.length === 0) {
-    return NextResponse.json(
-      { error: "No data rows found in the CSV file" },
-      { status: 400 }
-    );
-  }
-
-  if (records.length > MAX_IMPORT_ROWS) {
-    return NextResponse.json(
-      { error: `CSV has ${records.length} rows; the limit per import is ${MAX_IMPORT_ROWS}` },
-      { status: 400 }
-    );
-  }
-
-  const existing = await loadExistingKeys();
-  const result = validateImportRows(headers, records, existing);
-
-  return NextResponse.json({ data: result });
 }

@@ -5,6 +5,7 @@ import { buildReturnsWhere } from "@/lib/returnsQuery";
 import { listReturnsQuerySchema } from "@/lib/validation";
 import type { ReturnDto } from "@/lib/serialize";
 import { serializeReturn } from "@/lib/serialize";
+import { handleApiError } from "@/lib/apiError";
 
 const EXPORT_COLUMNS: { key: keyof ReturnDto; header: string }[] = [
   { key: "returnRef", header: "Return Reference" },
@@ -35,20 +36,24 @@ export async function GET(request: NextRequest) {
   const { sortBy, sortDir } = parsed.data;
   const where = buildReturnsWhere(parsed.data);
 
-  const records = await prisma.return.findMany({
-    where,
-    orderBy: { [sortBy]: sortDir },
-    take: 20000,
-  });
+  try {
+    const records = await prisma.return.findMany({
+      where,
+      orderBy: { [sortBy]: sortDir },
+      take: 20000,
+    });
 
-  const csv = toCsv(EXPORT_COLUMNS, records.map(serializeReturn));
-  const filename = `returnops-returns-${new Date().toISOString().slice(0, 10)}.csv`;
+    const csv = toCsv(EXPORT_COLUMNS, records.map(serializeReturn));
+    const filename = `returnops-returns-${new Date().toISOString().slice(0, 10)}.csv`;
 
-  return new NextResponse(csv, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-  });
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
