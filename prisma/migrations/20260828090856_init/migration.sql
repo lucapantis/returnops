@@ -1,6 +1,9 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateTable
 CREATE TABLE "Return" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "returnRef" TEXT NOT NULL,
     "orderNumber" TEXT NOT NULL,
     "productName" TEXT NOT NULL,
@@ -8,11 +11,13 @@ CREATE TABLE "Return" (
     "customerName" TEXT NOT NULL,
     "reason" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'RECEIVED',
-    "receivedDate" DATETIME NOT NULL,
-    "completedDate" DATETIME,
+    "receivedDate" TIMESTAMP(3) NOT NULL,
+    "completedDate" TIMESTAMP(3),
     "operatorNotes" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Return_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex

@@ -34,6 +34,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the placeholder template IS committed
+!.env.example
 
 # vercel
 .vercel
@@ -44,7 +46,8 @@ next-env.d.ts
 
 /app/generated/prisma
 
-# sqlite database (regenerate via `npm run db:migrate` + `npm run db:seed`)
+# local database files (the app runs on Neon PostgreSQL; these are only
+# leftovers from the old SQLite setup or an accidental local db)
 /prisma/dev.db
 /dev.db
 *.db

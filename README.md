@@ -2,39 +2,43 @@
 
 ReturnOps is a returns and operational-record management system: a single-tenant
 dashboard for logging, tracking and reporting on product returns through a
-fixed inspection-and-resolution workflow. It's a local MVP built with fully
+fixed inspection-and-resolution workflow. It's an MVP built with fully
 fictional demo data — no real company, customer or order information is used
-anywhere in the codebase or seed data.
+anywhere in the codebase or seed data. It runs on a hosted
+[Neon](https://neon.tech) PostgreSQL database.
 
 ## Tech stack
 
 - **Next.js 16** (App Router) + **React 19** + **TypeScript** (strict mode)
 - **Tailwind CSS 4** for styling
-- **Prisma 7** ORM on **SQLite**, via the `@prisma/adapter-better-sqlite3`
-  driver adapter (Prisma 7 no longer ships a bundled query engine — see
-  [Architecture decisions](#architecture-decisions))
+- **Prisma 7** ORM on **PostgreSQL** (Neon), via the `@prisma/adapter-pg`
+  driver adapter over the `pg` driver (Prisma 7 no longer ships a bundled
+  query engine — see [Architecture decisions](#architecture-decisions))
 - **Zod 4** for all input validation (API bodies, forms, CSV rows) from a
   single shared schema module
 - **Recharts** for the dashboard visualizations
 - **Vitest** for unit tests, **Playwright** for an end-to-end test
 - A hand-rolled RFC4180 CSV parser/serializer (no external CSV dependency)
 
-No authentication is implemented — this is a local single-user MVP.
+No authentication is implemented — this is a single-user MVP.
 
 ## Getting started
 
-Requirements: Node.js 20+.
+Requirements: Node.js 20+ and a PostgreSQL database. The project is developed
+against [Neon](https://neon.tech); any PostgreSQL 14+ instance works.
 
 ```bash
 npm install
 
-# Copy the environment template (only DATABASE_URL is required)
+# Copy the environment template and fill in your connection strings
 cp .env.example .env
+#   DATABASE_URL  — pooled connection, used by the app at runtime
+#   DIRECT_URL    — direct (unpooled) connection, used by Prisma migrations
 
-# Create the SQLite database and apply migrations
+# Apply the PostgreSQL migration to your database
 npm run db:migrate
 
-# Seed it with ~76 realistic fictional return records
+# Seed it with 72 realistic fictional return records
 npm run db:seed
 
 # Start the dev server
@@ -44,12 +48,14 @@ npm run dev
 Then open [http://localhost:3000](http://localhost:3000). The dashboard,
 returns list and charts will be populated from the seed data immediately.
 
-To wipe the database and start over (re-applies migrations and re-seeds in
-one step):
+The seed is safe to re-run at any time — it replaces the `Return` table
+contents inside a single transaction with the same deterministic dataset, and
+refuses to run against a database host that isn't `localhost` or `*.neon.tech`
+unless `RETURNOPS_SEED_ALLOW_ANY_HOST=true` is set.
 
-```bash
-npm run db:reset
-```
+To create a **new** migration after changing `prisma/schema.prisma`, use
+`npm run db:migrate:dev` (wraps `prisma migrate dev`, which needs a shadow
+database — see [Architecture decisions](#architecture-decisions)).
 
 ## Available scripts
 
@@ -63,9 +69,10 @@ npm run db:reset
 | `npm run test`         | Run unit tests once (Vitest)                           |
 | `npm run test:watch`   | Unit tests in watch mode                               |
 | `npm run e2e`          | Playwright end-to-end tests (spins up the dev server)  |
-| `npm run db:migrate`   | Apply Prisma migrations (`prisma migrate dev`)         |
-| `npm run db:seed`      | Seed the database (`prisma db seed`)                   |
-| `npm run db:reset`     | Drop, re-migrate and re-seed the database               |
+| `npm run db:migrate`     | Apply pending migrations (`prisma migrate deploy`)   |
+| `npm run db:migrate:dev` | Create + apply a new migration (`prisma migrate dev`)|
+| `npm run db:seed`        | Seed the database (`prisma db seed`)                 |
+| `npm run db:reset`       | Drop, re-migrate and re-seed the database (destructive) |
 
 ## Features
 
@@ -137,15 +144,48 @@ a downstream spreadsheet (CSV injection).
 
 ## Architecture decisions
 
-- **No native SQLite enums.** `status` and `reason` are stored as plain
-  `TEXT` columns and validated exclusively at the application boundary via
-  the Zod schemas in `lib/validation.ts` — the single source of truth reused
-  by the create/edit API routes, the CSV import pipeline, and the forms.
+- **Enums as `TEXT`.** `status` and `reason` are stored as plain `text`
+  columns (not PostgreSQL `enum` types) and validated exclusively at the
+  application boundary via the Zod schemas in `lib/validation.ts` — the
+  single source of truth reused by the create/edit API routes, the CSV
+  import pipeline, and the forms. This keeps adding a new status/reason a
+  code-only change with no migration, and matches the original SQLite model.
 - **Prisma 7 driver adapters.** Prisma 7 removed the bundled Rust query
-  engine; `PrismaClient` is constructed with an explicit
-  `@prisma/adapter-better-sqlite3` adapter (`lib/prisma.ts`), and the
-  datasource URL lives in `prisma.config.ts` rather than `schema.prisma`
-  (schema-embedded datasource URLs are no longer supported).
+  engine; `PrismaClient` is constructed with an explicit `@prisma/adapter-pg`
+  adapter over the `pg` driver (`lib/prisma.ts`), and the datasource URL
+  lives in `prisma.config.ts` rather than `schema.prisma` (schema-embedded
+  datasource URLs are no longer supported).
+- **Pooled runtime, direct migrations.** The app runtime connects through
+  Neon's pooled (PgBouncer) endpoint via `DATABASE_URL`. Prisma Migrate and
+  the other CLI commands need session-level features the pooler can't
+  provide, so `prisma.config.ts` points them at the direct, unpooled
+  `DIRECT_URL` instead. Prisma 7's config `datasource` block only exposes
+  `url` (there is no `directUrl` field), which is fine here because that
+  block is *only* read by the CLI — the runtime never loads it.
+- **Migration history reset for the provider switch.** ReturnOps started on
+  SQLite. The single SQLite `init` migration contained SQLite-only DDL
+  (`DATETIME`, inline `PRIMARY KEY`, no `CREATE SCHEMA`) that PostgreSQL
+  cannot execute, so keeping it would have permanently broken
+  `prisma migrate deploy`. Because no PostgreSQL database had ever applied
+  it, the old migration was deleted outright and replaced with a single
+  fresh PostgreSQL baseline (`prisma/migrations/*_init/`, generated with
+  `prisma migrate diff --from-empty --to-schema`), and `migration_lock.toml`
+  was switched to `postgresql`. There is no data to migrate — every
+  environment is seeded from `prisma/seed.ts`.
+- **`prisma migrate deploy` as the default.** `npm run db:migrate` runs
+  `migrate deploy`, which applies committed migrations without needing a
+  shadow database — the right choice for a hosted Neon database. Creating
+  *new* migrations (`npm run db:migrate:dev` → `prisma migrate dev`) still
+  needs a shadow database; Neon supports this, or point
+  `datasource.shadowDatabaseUrl` in `prisma.config.ts` at a scratch database.
+- **Case-insensitive search preserved.** SQLite's `LIKE` is
+  case-insensitive for ASCII by default; PostgreSQL's is not. The returns
+  search in `lib/returnsQuery.ts` sets Prisma's `mode: "insensitive"` on
+  each clause so search behaves exactly as it did on SQLite.
+- **Wrong-database guard.** `lib/dbGuard.ts` fails fast if `DATABASE_URL`
+  is missing or non-PostgreSQL, and the seed additionally refuses hosts that
+  aren't `localhost`/`*.neon.tech` without an explicit opt-in — so a stray
+  connection string in the shell can't be read from or wiped by accident.
 - **Shared query logic, no internal HTTP hop.** The returns list *page*
   (a Server Component) and the `GET /api/returns` *endpoint* both call the
   same `listReturns()`/`buildReturnsWhere()` helpers in
@@ -171,15 +211,18 @@ a downstream spreadsheet (CSV injection).
 ```bash
 npm run test        # unit tests: validation, CSV parsing, import logic, metrics
 npm run e2e          # Playwright: dashboard → browse/filter → create → advance
-                      # status → bulk import, against a real dev server + DB
+                      # status → bulk import, against a real dev server + DB,
+                      # on desktop and mobile (Pixel 7) viewports
 ```
 
 Unit tests cover the pure logic in `lib/` (Zod schemas, CSV parse/serialize,
 import row validation/deduplication, metrics aggregation, status-transition
-rules) without touching the database. The Playwright suite exercises the
-whole stack end to end and is safe to re-run repeatedly — it generates a
-unique record suffix per run rather than relying on fixed IDs, so it never
-collides with itself or the seed data.
+rules) without touching the database, so `npm run test` never connects to
+PostgreSQL. The Playwright suite exercises the whole stack end to end against
+whatever database `.env` points at, and is safe to re-run repeatedly — it
+generates a unique record suffix per run rather than relying on fixed IDs, so
+it never collides with itself or the seed data. Point `.env` at a disposable
+database (never a shared or production one) before running it.
 
 ## Known limitations
 
@@ -187,6 +230,11 @@ collides with itself or the seed data.
   dev-only dependency pulled in by `@prisma/config`. It has no runtime
   exposure (it's not part of the built app) and there's no non-breaking fix
   available at the current Prisma 7.10.x line.
+- `pg` prints a one-time `SECURITY WARNING` on startup because the Neon
+  connection strings use `sslmode=require`, which upcoming `pg` v9 will
+  reinterpret. Current behaviour (treated as `verify-full`) is the stricter,
+  correct one for Neon; the warning is cosmetic and clears once the
+  connection strings are updated to `sslmode=verify-full`.
 - No optimistic concurrency control on edits — a "last write wins" model is
   fine for a single-user local MVP but wouldn't be for concurrent multi-user
   use. A concurrent create that loses a `returnRef` race is surfaced as a

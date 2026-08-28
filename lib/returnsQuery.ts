@@ -23,12 +23,17 @@ export function buildReturnsWhere(
   }
 
   if (query.search) {
+    // `mode: "insensitive"` keeps search case-insensitive on PostgreSQL. SQLite
+    // (the previous datastore) matched case-insensitively for ASCII by default;
+    // PostgreSQL's LIKE is case-sensitive, so this is required to preserve the
+    // original behaviour.
+    const contains = { contains: query.search, mode: "insensitive" } as const;
     where.OR = [
-      { returnRef: { contains: query.search } },
-      { orderNumber: { contains: query.search } },
-      { productName: { contains: query.search } },
-      { customerName: { contains: query.search } },
-      { sku: { contains: query.search } },
+      { returnRef: contains },
+      { orderNumber: contains },
+      { productName: contains },
+      { customerName: contains },
+      { sku: contains },
     ];
   }
 
