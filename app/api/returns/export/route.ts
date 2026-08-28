@@ -6,6 +6,7 @@ import { listReturnsQuerySchema } from "@/lib/validation";
 import type { ReturnDto } from "@/lib/serialize";
 import { serializeReturn } from "@/lib/serialize";
 import { handleApiError } from "@/lib/apiError";
+import { guard } from "@/lib/auth/guard";
 
 const EXPORT_COLUMNS: { key: keyof ReturnDto; header: string }[] = [
   { key: "returnRef", header: "Return Reference" },
@@ -21,6 +22,9 @@ const EXPORT_COLUMNS: { key: keyof ReturnDto; header: string }[] = [
 ];
 
 export async function GET(request: NextRequest) {
+  const authz = await guard("returns:export");
+  if (!authz.ok) return authz.response;
+
   const params = Object.fromEntries(request.nextUrl.searchParams);
   const parsed = listReturnsQuerySchema
     .omit({ page: true, pageSize: true })

@@ -58,6 +58,7 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+/e2e/.auth/
 
 # auto-installed prisma agent skill docs (not project source)
 /.agents/

@@ -6,6 +6,8 @@ import { Pagination } from "@/components/returns/Pagination";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 import { listReturns, type ListReturnsResult } from "@/lib/returnsQuery";
 import { listReturnsQuerySchema } from "@/lib/validation";
+import { requireUser } from "@/lib/auth/guard";
+import { can } from "@/lib/auth/permissions";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -23,6 +25,10 @@ export default async function ReturnsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  const user = await requireUser();
+  const canCreate = can(user.role, "returns:create");
+  const canImport = can(user.role, "returns:import");
+
   const raw = await searchParams;
   const queryRecord = toQueryRecord(raw);
   const parsed = listReturnsQuerySchema.safeParse(queryRecord);
@@ -69,10 +75,12 @@ export default async function ReturnsPage({
             <LinkButton href={exportHref} variant="secondary">
               Export CSV
             </LinkButton>
-            <LinkButton href="/returns/import" variant="secondary">
-              Import CSV
-            </LinkButton>
-            <LinkButton href="/returns/new">New return</LinkButton>
+            {canImport && (
+              <LinkButton href="/returns/import" variant="secondary">
+                Import CSV
+              </LinkButton>
+            )}
+            {canCreate && <LinkButton href="/returns/new">New return</LinkButton>}
           </>
         }
       />
@@ -90,12 +98,14 @@ export default async function ReturnsPage({
               : "Create your first return or import a CSV to get started."
           }
           action={
-            !hasAnyReturnsAtAll ? (
+            !hasAnyReturnsAtAll && (canCreate || canImport) ? (
               <div className="flex gap-2">
-                <LinkButton href="/returns/new">New return</LinkButton>
-                <LinkButton href="/returns/import" variant="secondary">
-                  Import CSV
-                </LinkButton>
+                {canCreate && <LinkButton href="/returns/new">New return</LinkButton>}
+                {canImport && (
+                  <LinkButton href="/returns/import" variant="secondary">
+                    Import CSV
+                  </LinkButton>
+                )}
               </div>
             ) : undefined
           }

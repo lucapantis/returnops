@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { can, type Permission, type Role } from "@/lib/auth/permissions";
 
-const LINKS = [
+const LINKS: {
+  href: string;
+  label: string;
+  icon: (props: React.SVGProps<SVGSVGElement>) => React.ReactElement;
+  permission?: Permission;
+}[] = [
   { href: "/", label: "Dashboard", icon: DashboardIcon },
   { href: "/returns", label: "Returns", icon: ReturnsIcon },
-  { href: "/returns/import", label: "Import CSV", icon: ImportIcon },
+  { href: "/returns/import", label: "Import CSV", icon: ImportIcon, permission: "returns:import" },
+  { href: "/audit", label: "Audit log", icon: AuditIcon, permission: "audit:read" },
 ];
 
 function matchesPath(href: string, pathname: string): boolean {
@@ -14,18 +21,27 @@ function matchesPath(href: string, pathname: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+export function NavLinks({
+  role,
+  onNavigate,
+}: {
+  role: Role;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
+
+  const links = LINKS.filter((l) => !l.permission || can(role, l.permission));
 
   // "Most specific link wins" so e.g. /returns/import highlights only the
   // Import CSV entry, not Returns as well.
-  const activeHref = LINKS.map((l) => l.href)
+  const activeHref = links
+    .map((l) => l.href)
     .filter((href) => matchesPath(href, pathname))
     .sort((a, b) => b.length - a.length)[0];
 
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {LINKS.map((link) => {
+      {links.map((link) => {
         const isActive = link.href === activeHref;
         const Icon = link.icon;
         return (
@@ -75,6 +91,16 @@ function ImportIcon(props: React.SVGProps<SVGSVGElement>) {
       <path d="M12 3v12" />
       <path d="m7 10 5 5 5-5" />
       <path d="M4 21h16" />
+    </svg>
+  );
+}
+
+function AuditIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} {...props}>
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <path d="m9 14 2 2 4-4" />
     </svg>
   );
 }

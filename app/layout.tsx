@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
+import { getSessionUser } from "@/lib/auth/guard";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,14 +20,24 @@ export const metadata: Metadata = {
     "ReturnOps is a fictional returns and operational-record management system for logistics teams.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const user = await getSessionUser();
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-slate-50 font-sans text-slate-900">
-        <AppShell>{children}</AppShell>
+        <AppShell
+          user={
+            user
+              ? { name: user.name, email: user.email, role: user.role }
+              : null
+          }
+        >
+          {children}
+        </AppShell>
       </body>
     </html>
   );

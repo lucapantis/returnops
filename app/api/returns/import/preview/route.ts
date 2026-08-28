@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prepareImport } from "@/lib/importDb";
 import { handleApiError } from "@/lib/apiError";
+import { guard } from "@/lib/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const authz = await guard("returns:import");
+  if (!authz.ok) return authz.response;
+
   let body: unknown;
   try {
     body = await request.json();
