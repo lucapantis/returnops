@@ -85,6 +85,7 @@ database — see [Architecture decisions](#architecture-decisions)).
 | `npm run db:seed`        | Seed the database (`prisma db seed`)                 |
 | `npm run db:reset`       | Drop, re-migrate and re-seed the database (destructive) |
 | `npm run auth:init`      | Write missing auth env vars into `.env` (secret + demo passwords) |
+| `npm run demo:provision` | Upsert **only** the public portfolio demo VIEWER account (safe, non-destructive) |
 
 ## Features
 
@@ -190,6 +191,13 @@ explicitly listed for it in `lib/auth/permissions.ts`.
 | Audit log (page + API) | — | — | ✅ |
 | Any mutation not listed | — | — | — |
 
+The **public portfolio demo account** is a VIEWER with an even narrower grant
+(`DEMO_PERMISSIONS` in `lib/auth/permissions.ts` — `returns:read` only): it can
+browse the fictional dashboard, list and detail views but **cannot export CSV,
+run any mutation, or reach the audit trail**. A demo session is also clamped to
+the VIEWER role in `lib/auth/guard.ts` regardless of the database row. See
+[Public portfolio demo](#public-portfolio-demo).
+
 ### Where enforcement happens
 
 1. **`proxy.ts`** (Next.js 16's renamed Middleware) — an *optimistic*,
@@ -234,7 +242,7 @@ explicitly listed for it in `lib/auth/permissions.ts`.
 | --- | --- | --- |
 | `ADMIN` | `admin@returnops.local` | Full access incl. the audit log |
 | `OPERATOR` | `operator@returnops.local` | Mutations, no audit access (optional — created only if `SEED_OPERATOR_*` is set) |
-| `VIEWER` | `viewer@returnops.local` | Read-only demo account |
+| `VIEWER` | `viewer@returnops.local` | Read-only access (browse + CSV export) |
 
 Credentials come from environment variables (see below) and exist only in the
 git-ignored `.env`. The seed **upserts** these accounts and never touches any
@@ -243,6 +251,46 @@ refreshes only the display name and role — it will **not** reset the password
 or re-enable a disabled account. Set `SEED_RESET_CREDENTIALS=true` to force the
 password and active flag back to the `.env` baseline when rotating the demo
 credentials.
+
+### Public portfolio demo
+
+For a safe public demo, the login page shows a **"Try demo"** button beside the
+normal sign-in form. It appears **only** when both `DEMO_USER_EMAIL` and
+`DEMO_USER_PASSWORD` are set on the server; the normal login flow is untouched.
+
+- **Credentials stay server-side.** The button's action (`demoLoginAction` in
+  `app/login/actions.ts`) reads `DEMO_USER_*` from `process.env` and hands them
+  straight to Auth.js. Nothing is exposed via `NEXT_PUBLIC_*`, the client
+  bundle, logs or committed files — `.env.example` carries placeholders only.
+- **Always a VIEWER, and less.** The account is identified by its email
+  matching `DEMO_USER_EMAIL` (`lib/auth/demo.ts`). Every session for it is
+  forced to the VIEWER role and flagged `isDemo`, which narrows `can()` to
+  `DEMO_PERMISSIONS` (`returns:read`). So the demo account **cannot** create,
+  edit, import, export, change statuses, or open the audit log — enforced by
+  the same `guard()` / `requirePermission()` layer as every other role, and
+  covered by unit tests (`lib/auth/guard.test.ts`, `permissions.test.ts`) plus
+  an e2e spec (`e2e/demo.spec.ts`).
+- **Fictional data only.** ReturnOps contains nothing but fictional demo data
+  (`prisma/seed.ts`); the demo account is read-only on top of that.
+
+**Provisioning** (run against a local or Neon demo database — never production):
+
+```bash
+npm run auth:init        # writes DEMO_USER_* into the git-ignored .env
+npm run demo:provision   # upserts ONLY the demo VIEWER row
+```
+
+`npm run demo:provision` (`scripts/provision-demo-user.ts`) upserts the single
+account matched by `DEMO_USER_EMAIL`. It runs no migrations, seeds no returns,
+and never deletes, resets or overwrites any other record. It re-uses the
+`lib/dbGuard.ts` host check, so it refuses any database host that isn't
+`localhost` / `*.neon.tech` unless `RETURNOPS_SEED_ALLOW_ANY_HOST=true`. It also
+aborts if an account with that email already exists with a non-VIEWER role.
+Re-running it is the supported way to rotate the demo password.
+
+On the deployment, set `DEMO_USER_EMAIL` and `DEMO_USER_PASSWORD` (and
+optionally `DEMO_USER_NAME`) as environment variables, then run the provisioning
+command once against the demo database from a trusted machine.
 
 ### Environment variables
 
@@ -254,18 +302,23 @@ Runtime / build:
 | `DIRECT_URL` | Direct Postgres connection (Prisma CLI / migrations) |
 | `AUTH_SECRET` | Signs the session JWT — **required**. `openssl rand -base64 32` |
 | `AUTH_URL` | Canonical app URL (`https://<your-app>` on Vercel) |
+| `DEMO_USER_EMAIL`, `DEMO_USER_PASSWORD` | Enable the "Try demo" button. Both must be set for it to appear. Server-side only — never `NEXT_PUBLIC_*`. |
+| `DEMO_USER_NAME` | Optional display name for the demo account (default `ReturnOps Demo (viewer)`) |
 
-Seed-only (needed for `npm run db:seed`, not at runtime):
+Seed / provisioning-only (not needed at runtime, apart from the two `DEMO_*`
+above which gate the login button):
 
 | Name | Purpose |
 | --- | --- |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME` | ADMIN account |
-| `SEED_VIEWER_EMAIL`, `SEED_VIEWER_PASSWORD`, `SEED_VIEWER_NAME` | VIEWER demo account |
+| `SEED_VIEWER_EMAIL`, `SEED_VIEWER_PASSWORD`, `SEED_VIEWER_NAME` | VIEWER account |
 | `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD`, `SEED_OPERATOR_NAME` | OPERATOR account (optional) |
+| `DEMO_USER_EMAIL`, `DEMO_USER_PASSWORD`, `DEMO_USER_NAME` | Public portfolio demo VIEWER — used by `npm run demo:provision` |
 
 Placeholders for all of these are in `.env.example`. **Only `DATABASE_URL`,
-`DIRECT_URL`, `AUTH_SECRET` and `AUTH_URL` need to be set on Vercel** — the
-`SEED_*` variables are used only when seeding a database.
+`DIRECT_URL`, `AUTH_SECRET`, `AUTH_URL` and (for the demo button)
+`DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` need to be set on the deployment** —
+the `SEED_*` variables are used only when seeding a database.
 
 ## Architecture decisions
 

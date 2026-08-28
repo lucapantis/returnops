@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildUserUpsert } from "./seedAccounts";
+import { buildDemoUserUpsert, buildUserUpsert } from "./seedAccounts";
 
 const spec = {
   email: "admin@returnops.local",
@@ -34,5 +34,36 @@ describe("buildUserUpsert", () => {
       passwordHash: "HASH",
       isActive: true,
     });
+  });
+});
+
+describe("buildDemoUserUpsert", () => {
+  const demoSpec = { email: "demo@returnops.local", name: "ReturnOps Demo (viewer)" };
+
+  it("creates the demo account as an active VIEWER", () => {
+    const { create } = buildDemoUserUpsert(demoSpec, "HASH");
+    expect(create).toEqual({
+      email: "demo@returnops.local",
+      name: "ReturnOps Demo (viewer)",
+      role: "VIEWER",
+      passwordHash: "HASH",
+      isActive: true,
+    });
+  });
+
+  it("on re-provision forces the row back to an active VIEWER with the current password", () => {
+    const { update } = buildDemoUserUpsert(demoSpec, "HASH");
+    expect(update).toEqual({
+      name: "ReturnOps Demo (viewer)",
+      role: "VIEWER",
+      passwordHash: "HASH",
+      isActive: true,
+    });
+  });
+
+  it("never emits any role other than VIEWER", () => {
+    const payload = buildDemoUserUpsert(demoSpec, "HASH");
+    expect(payload.create.role).toBe("VIEWER");
+    expect(payload.update.role).toBe("VIEWER");
   });
 });

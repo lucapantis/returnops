@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const canCreate = can(user.role, "returns:create");
+  const canCreate = can(user.role, "returns:create", { isDemo: user.isDemo });
 
   let metrics: DashboardMetrics;
   try {

@@ -24,6 +24,7 @@ export const authConfig = {
       if (user) {
         token.id = user.id as string;
         token.role = (user as { role: Role }).role;
+        token.isDemo = (user as { isDemo?: boolean }).isDemo ?? false;
       }
       return token;
     },
@@ -31,6 +32,7 @@ export const authConfig = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
+        session.user.isDemo = Boolean(token.isDemo);
       }
       return session;
     },

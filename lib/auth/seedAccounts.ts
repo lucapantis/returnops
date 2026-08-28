@@ -54,3 +54,44 @@ export function buildUserUpsert(
       : { name: spec.name, role: spec.role },
   };
 }
+
+export interface DemoUserUpsertPayload {
+  create: {
+    email: string;
+    name: string;
+    role: "VIEWER";
+    passwordHash: string;
+    isActive: true;
+  };
+  update: {
+    name: string;
+    role: "VIEWER";
+    passwordHash: string;
+    isActive: true;
+  };
+}
+
+/**
+ * Build the Prisma `upsert` payload for the public portfolio demo account.
+ *
+ * Unlike the managed seed accounts, the demo account is a disposable public
+ * login: re-provisioning it **always** forces the row back to the VIEWER role,
+ * an active state and the current `DEMO_USER_PASSWORD`. This is the one place
+ * that is deliberately allowed to overwrite its own row — and only its own row,
+ * matched by the unique `email`. No other records are read or modified.
+ */
+export function buildDemoUserUpsert(
+  spec: { email: string; name: string },
+  passwordHash: string
+): DemoUserUpsertPayload {
+  const shared = {
+    name: spec.name,
+    role: "VIEWER" as const,
+    passwordHash,
+    isActive: true as const,
+  };
+  return {
+    create: { email: spec.email, ...shared },
+    update: { ...shared },
+  };
+}

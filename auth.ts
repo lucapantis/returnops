@@ -5,6 +5,7 @@ import { authConfig } from "@/auth.config";
 import { prisma } from "@/lib/prisma";
 import { DUMMY_HASH, verifyPassword } from "@/lib/auth/password";
 import { isLocked, registerFailure, registerSuccess } from "@/lib/auth/lockout";
+import { isDemoEmail } from "@/lib/auth/demo";
 
 const credentialsSchema = z.object({
   email: z.string().min(1),
@@ -57,11 +58,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           data: { ...registerSuccess(), lastLoginAt: new Date() },
         });
 
+        // The demo account is always treated as a VIEWER, whatever the row
+        // says, and flagged so the guard layer can narrow it further still.
+        const demo = isDemoEmail(user.email);
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role,
+          role: demo ? "VIEWER" : user.role,
+          isDemo: demo,
         };
       },
     }),

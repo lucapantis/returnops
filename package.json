@@ -16,7 +16,8 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
-    "auth:init": "node scripts/init-local-auth-env.mjs"
+    "auth:init": "node scripts/init-local-auth-env.mjs",
+    "demo:provision": "tsx scripts/provision-demo-user.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

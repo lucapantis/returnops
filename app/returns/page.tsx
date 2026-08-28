@@ -26,8 +26,9 @@ export default async function ReturnsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const user = await requireUser();
-  const canCreate = can(user.role, "returns:create");
-  const canImport = can(user.role, "returns:import");
+  const canCreate = can(user.role, "returns:create", { isDemo: user.isDemo });
+  const canImport = can(user.role, "returns:import", { isDemo: user.isDemo });
+  const canExport = can(user.role, "returns:export", { isDemo: user.isDemo });
 
   const raw = await searchParams;
   const queryRecord = toQueryRecord(raw);
@@ -72,9 +73,11 @@ export default async function ReturnsPage({
         description="Search, filter and manage return records."
         actions={
           <>
-            <LinkButton href={exportHref} variant="secondary">
-              Export CSV
-            </LinkButton>
+            {canExport && (
+              <LinkButton href={exportHref} variant="secondary">
+                Export CSV
+              </LinkButton>
+            )}
             {canImport && (
               <LinkButton href="/returns/import" variant="secondary">
                 Import CSV

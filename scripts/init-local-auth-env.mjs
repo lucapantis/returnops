@@ -32,6 +32,12 @@ const DEFAULTS = {
   SEED_OPERATOR_EMAIL: () => "operator@returnops.local",
   SEED_OPERATOR_PASSWORD: strongPassword,
   SEED_OPERATOR_NAME: () => "ReturnOps Operator",
+  // Public portfolio demo account (VIEWER, read-only, no export). Provisioned
+  // by `npm run demo:provision`; the "Try demo" button on the login page shows
+  // only when DEMO_USER_EMAIL and DEMO_USER_PASSWORD are both set.
+  DEMO_USER_EMAIL: () => "demo@returnops.local",
+  DEMO_USER_PASSWORD: strongPassword,
+  DEMO_USER_NAME: () => "ReturnOps Demo (viewer)",
 };
 
 if (!existsSync(ENV_PATH)) {

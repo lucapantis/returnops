@@ -43,16 +43,38 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
   ADMIN: new Set(ADMIN_PERMISSIONS),
 };
 
-/** True only if `role` is explicitly granted `permission`. Default deny. */
-export function can(role: unknown, permission: Permission): boolean {
+// The public portfolio demo account is a VIEWER with an even narrower grant:
+// it can read the (fictional) returns data and nothing else — no CSV export,
+// no mutations, no audit. Enforced server-side in `lib/auth/guard.ts` and
+// mirrored in the UI through the session's `isDemo` flag. See `lib/auth/demo.ts`.
+export const DEMO_PERMISSIONS: readonly Permission[] = ["returns:read"];
+const DEMO_SET: ReadonlySet<Permission> = new Set(DEMO_PERMISSIONS);
+
+/**
+ * True only if `role` is explicitly granted `permission`. Default deny.
+ *
+ * Pass `{ isDemo: true }` for a demo session: the grant is then intersected
+ * with `DEMO_PERMISSIONS`, so a demo VIEWER loses even `returns:export`.
+ */
+export function can(
+  role: unknown,
+  permission: Permission,
+  opts?: { isDemo?: boolean }
+): boolean {
   if (typeof role !== "string") return false;
   const grants = MATRIX[role as Role];
-  return grants ? grants.has(permission) : false;
+  if (!grants || !grants.has(permission)) return false;
+  if (opts?.isDemo) return DEMO_SET.has(permission);
+  return true;
 }
 
 /** Every permission a role holds — handy for tests and debugging. */
-export function permissionsFor(role: Role): Permission[] {
-  return [...(MATRIX[role] ?? new Set<Permission>())];
+export function permissionsFor(
+  role: Role,
+  opts?: { isDemo?: boolean }
+): Permission[] {
+  const grants = [...(MATRIX[role] ?? new Set<Permission>())];
+  return opts?.isDemo ? grants.filter((p) => DEMO_SET.has(p)) : grants;
 }
 
 export const ROLE_LABELS: Record<Role, string> = {

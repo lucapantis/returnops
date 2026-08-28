@@ -5,12 +5,19 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { can, type Permission, type Role } from "@/lib/auth/permissions";
+import { isDemoEmail } from "@/lib/auth/demo";
 
 export interface SessionUser {
   id: string;
   email: string;
   name: string;
   role: Role;
+  /**
+   * The public portfolio demo account. Always a VIEWER, and additionally
+   * denied `returns:export` and every mutation — `can()` is called with
+   * `{ isDemo }` throughout this module.
+   */
+  isDemo: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -25,7 +32,14 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const session = await auth();
   const u = session?.user;
   if (!u?.id || !u.email) return null;
-  return { id: u.id, email: u.email, name: u.name ?? u.email, role: u.role };
+  const isDemo = Boolean(u.isDemo) || isDemoEmail(u.email);
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name ?? u.email,
+    role: isDemo ? "VIEWER" : u.role,
+    isDemo,
+  };
 });
 
 /**
@@ -42,7 +56,14 @@ export const getFreshUser = cache(async (): Promise<SessionUser | null> => {
     select: { id: true, email: true, name: true, role: true, isActive: true },
   });
   if (!user || !user.isActive) return null;
-  return { id: user.id, email: user.email, name: user.name, role: user.role };
+  const isDemo = isDemoEmail(user.email);
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: isDemo ? "VIEWER" : user.role,
+    isDemo,
+  };
 });
 
 // ---------------------------------------------------------------------------
@@ -72,7 +93,7 @@ export async function requirePermission(
   await requireUser();
   const user = fresh ? await getFreshUser() : await getSessionUser();
   if (!user) redirect("/login");
-  if (!can(user.role, permission)) redirect("/forbidden");
+  if (!can(user.role, permission, { isDemo: user.isDemo })) redirect("/forbidden");
   return user;
 }
 
@@ -108,13 +129,13 @@ export async function guard(
     if (!freshUser) {
       return deny(401, "Your session is no longer valid. Please sign in again.");
     }
-    if (!can(freshUser.role, permission)) {
+    if (!can(freshUser.role, permission, { isDemo: freshUser.isDemo })) {
       return deny(403, "You do not have permission to perform this action");
     }
     return { ok: true, user: freshUser };
   }
 
-  if (!can(sessionUser.role, permission)) {
+  if (!can(sessionUser.role, permission, { isDemo: sessionUser.isDemo })) {
     return deny(403, "You do not have permission to perform this action");
   }
   return { ok: true, user: sessionUser };
