@@ -3,7 +3,15 @@
 Fictional returns & operational-record management system (MVP).
 
 ## Stack
-Next.js (App Router, TypeScript) · Tailwind CSS · Prisma + SQLite · Zod · Recharts · Vitest · Playwright.
+Next.js (App Router, TypeScript) · Tailwind CSS · Prisma 7 + PostgreSQL (Neon),
+`@prisma/adapter-pg` driver adapter · Zod · Recharts · Vitest · Playwright.
+
+> Originally built on SQLite; migrated to Neon PostgreSQL. The SQLite
+> `init` migration was SQLite-only DDL and was replaced with a fresh
+> PostgreSQL baseline (`prisma/migrations/*_init`); `migration_lock.toml`
+> is now `postgresql`. Runtime uses the pooled `DATABASE_URL`; Prisma
+> Migrate/CLI uses the direct `DIRECT_URL` (configured in `prisma.config.ts`).
+> See README → Architecture decisions for the full rationale.
 
 ## Data model (Prisma)
 `Return`:
@@ -24,6 +32,8 @@ Unique constraint on (`orderNumber`, `productName`, `sku`) is NOT enforced at DB
 
 ## Architecture decisions
 - Server-side data access via Prisma in API route handlers under `app/api/**`; client components call these via `fetch`.
+- PostgreSQL (Neon) via the `@prisma/adapter-pg` driver adapter; `lib/dbGuard.ts` fails fast on a missing/non-Postgres `DATABASE_URL`, and the seed refuses non-local/non-Neon hosts unless explicitly opted in.
+- Free-text search sets Prisma `mode: "insensitive"` so it stays case-insensitive as it was on SQLite.
 - Zod schemas in `lib/validation.ts` shared between API routes and forms — single source of truth for required fields.
 - Pagination, search and filters implemented server-side via query params on `GET /api/returns`.
 - CSV parsing is hand-rolled in `lib/csv.ts` (no extra dependency) — small RFC4180-ish parser sufficient for MVP fields (no embedded newlines needed for our fields, but quoted-field/comma escaping is supported).
@@ -56,7 +66,7 @@ Unique constraint on (`orderNumber`, `productName`, `sku`) is NOT enforced at DB
 
 ## Milestones
 1. Scaffold Next.js + Tailwind + TS strict.
-2. Prisma schema + SQLite + seed script (~60 fictional returns across statuses/dates).
+2. Prisma schema + PostgreSQL (Neon) + seed script (72 fictional returns across statuses/dates).
 3. Core API routes + Zod validation.
 4. Returns table + pagination + search/filters.
 5. Create/view/edit pages + status workflow.

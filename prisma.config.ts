@@ -3,6 +3,14 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// Prisma 7's config `datasource` only exposes `url` (+ optional
+// `shadowDatabaseUrl`); there is no separate `directUrl` field. The Prisma CLI
+// (migrate / studio / generate) only ever needs a *direct*, unpooled
+// connection, so we point it at DIRECT_URL. The application runtime uses the
+// pooled DATABASE_URL via the driver adapter in `lib/prisma.ts` instead — it
+// never loads this file. DIRECT_URL is required for migrations against Neon:
+// the PgBouncer pooler can't hold the session-level advisory locks Prisma
+// Migrate needs.
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -10,6 +18,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });

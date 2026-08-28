@@ -16,6 +16,11 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      // Critical flows must also hold up on a phone-sized viewport.
+      name: "mobile-chrome",
+      use: { ...devices["Pixel 7"] },
+    },
   ],
   webServer: {
     command: "npm run dev",

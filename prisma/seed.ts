@@ -1,11 +1,19 @@
-// Seeds the local SQLite database with realistic *fictional* return records
+// Seeds the Neon PostgreSQL database with realistic *fictional* return records
 // spanning every status, reason and a spread of received dates. Run with
 // `npm run db:seed` (wraps `prisma db seed`).
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+//
+// Safe & repeatable: it refuses to run against anything that doesn't look like
+// a local or Neon demo database (see lib/dbGuard.ts), and it replaces the
+// dataset inside a single transaction, so re-running always lands on the same
+// deterministic 72-row demo set with no partial state.
+import "dotenv/config";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { RETURN_REASONS, RETURN_STATUSES, type ReturnReason, type ReturnStatus } from "../lib/constants";
+import { assertSeedableDatabaseUrl } from "../lib/dbGuard";
 
-const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" });
+const connectionString = assertSeedableDatabaseUrl(process.env.DATABASE_URL);
+const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 // Deterministic PRNG (mulberry32) so re-running the seed produces the same
@@ -125,8 +133,6 @@ function daysAgo(days: number): Date {
 async function main() {
   console.log("Seeding ReturnOps demo data...");
 
-  await prisma.return.deleteMany();
-
   const totalRecords = 72;
   const rows: {
     returnRef: string;
@@ -173,7 +179,10 @@ async function main() {
     });
   }
 
-  await prisma.return.createMany({ data: rows });
+  await prisma.$transaction([
+    prisma.return.deleteMany(),
+    prisma.return.createMany({ data: rows }),
+  ]);
 
   console.log(`Seeded ${rows.length} returns.`);
   const statusCounts = RETURN_STATUSES.map(
