@@ -41,7 +41,7 @@ export function ReasonBarChart({ data }: { data: ReasonCount[] }) {
         <Tooltip
           cursor={{ fill: "rgba(11,11,11,0.04)" }}
           contentStyle={{ borderRadius: 8, border: "1px solid #e1e0d9", fontSize: 13 }}
-          formatter={(value: number) => [`${value}`, "Returns"]}
+          formatter={(value) => [`${value ?? 0}`, "Returns"]}
         />
         <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={22}>
           {chartData.map((entry) => (

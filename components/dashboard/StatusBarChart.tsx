@@ -46,7 +46,7 @@ export function StatusBarChart({ data }: { data: StatusCount[] }) {
             border: "1px solid #e1e0d9",
             fontSize: 13,
           }}
-          formatter={(value: number) => [`${value}`, "Returns"]}
+          formatter={(value) => [`${value ?? 0}`, "Returns"]}
         />
         <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={56}>
           {chartData.map((entry) => (

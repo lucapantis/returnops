@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 // Seeds the local SQLite database with realistic *fictional* return records
 // spanning every status, reason and a spread of received dates. Run with
 // `npm run db:seed` (wraps `prisma db seed`).
