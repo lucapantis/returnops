@@ -200,10 +200,11 @@ explicitly listed for it in `lib/auth/permissions.ts`.
    `requirePermission` in `lib/auth/guard.ts`); unauthorized users are sent to
    `/login` or `/forbidden`.
 3. **Every API route and server mutation** independently calls `guard()`,
-   which returns a real `401` / `403`. Reads check the session claim;
-   mutations pass `{ fresh: true }` to **re-load the user from the database**
-   first, so a revoked role or disabled account takes effect immediately even
-   if the session cookie is still valid.
+   which returns a real `401` / `403`. Most reads check the session claim;
+   every mutation **and the audit trail** (`/audit` page + `GET /api/audit`)
+   pass `{ fresh: true }` to **re-load the user from the database** first, so a
+   revoked role or a disabled account takes effect on the next request even if
+   the session cookie is still valid.
 4. **UI actions** the current role can't perform are hidden (buttons, nav
    links, the workflow panel), but that is cosmetic — the server checks stand
    on their own. This is verified by e2e tests that call the API directly with
@@ -213,8 +214,9 @@ explicitly listed for it in `lib/auth/permissions.ts`.
 
 - Append-only `AuditLog` table: `actorId` / `actorEmail` / `actorRole`,
   `action`, `entityType`, `entityId`, redacted `metadata`, `createdAt`.
-- The migration installs a Postgres trigger that **rejects `UPDATE` and
-  `DELETE`** on the table, so the trail can't be rewritten by any code path.
+- The migrations install Postgres triggers that **reject `UPDATE`, `DELETE`
+  and `TRUNCATE`** on the table, so the trail can't be rewritten or wiped by
+  any code path.
 - Successful **create**, **edit**, **status-change** and **CSV-import**
   mutations each write one row, in the **same transaction** as the business
   change (they commit or roll back together).
@@ -236,7 +238,11 @@ explicitly listed for it in `lib/auth/permissions.ts`.
 
 Credentials come from environment variables (see below) and exist only in the
 git-ignored `.env`. The seed **upserts** these accounts and never touches any
-other user, so it stays safe to re-run.
+other user, so it stays safe to re-run. For an account that already exists it
+refreshes only the display name and role — it will **not** reset the password
+or re-enable a disabled account. Set `SEED_RESET_CREDENTIALS=true` to force the
+password and active flag back to the `.env` baseline when rotating the demo
+credentials.
 
 ### Environment variables
 
@@ -353,9 +359,11 @@ npm run e2e          # Playwright: auth + RBAC + audit + critical flow, against
 
 Unit tests cover the pure logic in `lib/` (Zod schemas, CSV parse/serialize,
 import row validation/deduplication, metrics aggregation, status-transition
-rules, the **permission matrix**, **password hashing**, the **lockout**
-state machine and **audit metadata redaction**) without touching the
-database, so `npm run test` never connects to PostgreSQL.
+rules, the **permission matrix**, the **`guard()` authorization logic**
+(including the `{ fresh: true }` database re-check), **password hashing**, the
+**lockout** state machine, **callback-URL open-redirect sanitisation**, the
+**seed account upsert** rules and **audit metadata redaction**) without
+touching the database, so `npm run test` never connects to PostgreSQL.
 
 The Playwright suite (`e2e/auth.spec.ts` + `e2e/critical-flow.spec.ts`)
 exercises the whole stack end to end and covers:
@@ -363,6 +371,8 @@ exercises the whole stack end to end and covers:
 - valid / invalid login and the generic (non-enumerating) error
 - unauthenticated page redirects and `401` API responses
 - a forged session cookie treated as no session
+- an off-site `callbackUrl` (`https://…`, `//host`, `/\host`) cannot bounce the
+  user off-origin after login
 - VIEWER: mutation UI hidden, mutation pages `→ /forbidden`, and **direct API
   calls rejected with `403`** (create, edit, status-change, import, audit)
 - OPERATOR: full create / edit / legal-transition / import workflow, illegal
@@ -405,10 +415,17 @@ safe to re-run.
     15 minutes (a deliberate trade-off).
   - No password rotation, expiry, complexity policy (beyond a 12-char seed
     minimum), MFA, or "log out all devices" — out of scope per the brief.
-  - JWT sessions can't be revoked centrally before they expire; sensitive
-    mutations mitigate this by re-checking the database, but a stale session
-    can still *read* data for the remainder of its lifetime after a role
-    downgrade. Reducing the session `maxAge` is the lever if that matters.
+  - JWT sessions can't be revoked centrally before they expire. Every mutation
+    and the audit trail re-check the database, so a downgraded or disabled
+    account loses write access and audit access on its next request; but a
+    stale session can still *read* ordinary returns data (list, detail,
+    metrics, export) for the remainder of its lifetime. Reducing the session
+    `maxAge` is the lever if that matters.
+  - The failed-login counter is written on the wrong-password path but not on
+    the "no such user" path, so a real account's failed login is marginally
+    slower than an unknown email's. bcrypt dominates the response time, so this
+    is not a practical enumeration oracle for an internal tool with no public
+    sign-up.
   - The audit log records mutations only (not reads or logins) and keeps a
     single batch row per CSV import rather than one per imported record.
   - Account management (create/disable/change-role) is done via the seed or

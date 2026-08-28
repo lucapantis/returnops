@@ -2,16 +2,10 @@
 
 import { AuthError } from "next-auth";
 import { signIn, signOut } from "@/auth";
+import { safeCallbackUrl } from "@/lib/auth/callbackUrl";
 
 export interface LoginState {
   error?: string;
-}
-
-/** Only allow same-origin relative redirect targets. */
-function safeCallbackUrl(raw: unknown): string {
-  if (typeof raw !== "string") return "/";
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
 }
 
 export async function loginAction(

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/guard";
+import { safeCallbackUrl } from "@/lib/auth/callbackUrl";
 import { LoginForm } from "./LoginForm";
 
 export const metadata: Metadata = {
@@ -42,7 +43,7 @@ export default async function LoginPage({
         )}
 
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <LoginForm callbackUrl={callbackUrl ?? "/"} />
+          <LoginForm callbackUrl={safeCallbackUrl(callbackUrl)} />
         </div>
 
         <p className="mt-4 text-center text-xs text-slate-400">

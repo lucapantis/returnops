@@ -66,6 +66,28 @@ test.describe("unauthenticated", () => {
     await expect(page).toHaveURL("http://localhost:3000/");
   });
 
+  test("an off-site callbackUrl cannot redirect the user away after login", async ({
+    page,
+  }) => {
+    for (const evil of [
+      "https://evil.example.com/phish",
+      "//evil.example.com",
+      "/\\evil.example.com",
+    ]) {
+      await page.goto(`/login?callbackUrl=${encodeURIComponent(evil)}`);
+      await page.getByLabel("Email").fill("viewer@returnops.local");
+      await page
+        .getByLabel("Password")
+        .fill(process.env.SEED_VIEWER_PASSWORD ?? "");
+      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.waitForURL((url) => !url.pathname.startsWith("/login"));
+      // Landed back on our own origin, never on the attacker's host.
+      expect(new URL(page.url()).origin).toBe("http://localhost:3000");
+      // reset for the next iteration
+      await page.context().clearCookies();
+    }
+  });
+
   test("a forged session cookie is treated as no session", async ({ page, context }) => {
     await context.addCookies([
       {

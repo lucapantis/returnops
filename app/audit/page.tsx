@@ -26,7 +26,9 @@ export default async function AuditPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requirePermission("audit:read");
+  // Re-check the role against the database (not just the session claim) so a
+  // stale ADMIN JWT can't keep reading the audit trail after a demotion.
+  await requirePermission("audit:read", { fresh: true });
 
   const raw = await searchParams;
   const queryRecord = toQueryRecord(raw);

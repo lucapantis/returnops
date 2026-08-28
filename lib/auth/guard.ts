@@ -59,11 +59,19 @@ export async function requireUser(): Promise<SessionUser> {
 /**
  * Require a specific permission for a page. Unauthenticated -> /login;
  * authenticated but not permitted -> /forbidden. Default deny.
+ *
+ * - `fresh: false` (default) checks the permission against the session claim.
+ * - `fresh: true` re-loads the user from the database first — use it for pages
+ *   that expose sensitive data (e.g. the audit log) so a downgraded role or a
+ *   disabled account loses access immediately, not only when the JWT expires.
  */
 export async function requirePermission(
-  permission: Permission
+  permission: Permission,
+  { fresh = false }: { fresh?: boolean } = {}
 ): Promise<SessionUser> {
-  const user = await requireUser();
+  await requireUser();
+  const user = fresh ? await getFreshUser() : await getSessionUser();
+  if (!user) redirect("/login");
   if (!can(user.role, permission)) redirect("/forbidden");
   return user;
 }

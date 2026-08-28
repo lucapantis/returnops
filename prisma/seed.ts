@@ -13,6 +13,7 @@ import { RETURN_REASONS, RETURN_STATUSES, type ReturnReason, type ReturnStatus }
 import { assertSeedableDatabaseUrl } from "../lib/dbGuard";
 import { hashPassword } from "../lib/auth/password";
 import type { Role } from "../lib/auth/permissions";
+import { buildUserUpsert } from "../lib/auth/seedAccounts";
 
 const connectionString = assertSeedableDatabaseUrl(process.env.DATABASE_URL);
 const adapter = new PrismaPg({ connectionString });
@@ -132,11 +133,14 @@ function daysAgo(days: number): Date {
   return new Date(Date.now() - days * DAY_MS);
 }
 
-// Upserts the two required accounts from environment variables. Credentials
-// live only in the git-ignored `.env` (run `node scripts/init-local-auth-env.mjs`
-// to generate them). Re-running is safe: existing rows are updated in place,
-// never duplicated, and no other users are touched.
+// Upserts the required accounts from environment variables. Credentials live
+// only in the git-ignored `.env` (run `npm run auth:init` to generate them).
+// Re-running is safe: existing rows are never duplicated and no other users are
+// touched. For an account that already exists the seed refreshes only its name
+// and role — it does NOT reset the password or re-enable a disabled account
+// unless SEED_RESET_CREDENTIALS=true (used only when rotating demo credentials).
 async function seedUsers() {
+  const resetCredentials = process.env.SEED_RESET_CREDENTIALS === "true";
   const specs: {
     email?: string;
     password?: string;
@@ -187,13 +191,16 @@ async function seedUsers() {
     const email = spec.email.trim().toLowerCase();
     const passwordHash = await hashPassword(spec.password);
 
-    await prisma.user.upsert({
-      where: { email },
-      create: { email, name: spec.name!, role: spec.role, passwordHash, isActive: true },
-      update: { name: spec.name!, role: spec.role, passwordHash, isActive: true },
-    });
+    const { create, update } = buildUserUpsert(
+      { email, name: spec.name!, role: spec.role },
+      passwordHash,
+      { resetCredentials }
+    );
 
-    console.log(`  ${spec.role.padEnd(8)} ${email}`);
+    await prisma.user.upsert({ where: { email }, create, update });
+
+    const note = "passwordHash" in update ? " (credentials reset)" : "";
+    console.log(`  ${spec.role.padEnd(8)} ${email}${note}`);
   }
 }
 
