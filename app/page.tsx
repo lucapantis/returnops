@@ -7,10 +7,15 @@ import { ReasonBarChart } from "@/components/dashboard/ReasonBarChart";
 import { LinkButton } from "@/components/ui/Button";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 import { STATUS_LABELS } from "@/lib/constants";
+import { requireUser } from "@/lib/auth/guard";
+import { can } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  const user = await requireUser();
+  const canCreate = can(user.role, "returns:create");
+
   let metrics: DashboardMetrics;
   try {
     const records = await prisma.return.findMany({
@@ -32,14 +37,20 @@ export default async function DashboardPage() {
         <PageHeader title="Dashboard" description="Operational overview of returns activity." />
         <EmptyState
           title="No returns yet"
-          description="Seed demo data or create your first return to see metrics here."
+          description={
+            canCreate
+              ? "Seed demo data or create your first return to see metrics here."
+              : "No returns have been recorded yet."
+          }
           action={
-            <div className="flex gap-2">
-              <LinkButton href="/returns/new">New return</LinkButton>
-              <LinkButton href="/returns/import" variant="secondary">
-                Import CSV
-              </LinkButton>
-            </div>
+            canCreate ? (
+              <div className="flex gap-2">
+                <LinkButton href="/returns/new">New return</LinkButton>
+                <LinkButton href="/returns/import" variant="secondary">
+                  Import CSV
+                </LinkButton>
+              </div>
+            ) : undefined
           }
         />
       </div>
@@ -56,7 +67,11 @@ export default async function DashboardPage() {
       <PageHeader
         title="Dashboard"
         description="Operational overview of returns activity."
-        actions={<LinkButton href="/returns/new">New return</LinkButton>}
+        actions={
+          canCreate ? (
+            <LinkButton href="/returns/new">New return</LinkButton>
+          ) : undefined
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

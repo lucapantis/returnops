@@ -1,11 +1,15 @@
 # ReturnOps
 
-ReturnOps is a returns and operational-record management system: a single-tenant
+ReturnOps is a returns and operational-record management system: a
 dashboard for logging, tracking and reporting on product returns through a
 fixed inspection-and-resolution workflow. It's an MVP built with fully
 fictional demo data — no real company, customer or order information is used
 anywhere in the codebase or seed data. It runs on a hosted
 [Neon](https://neon.tech) PostgreSQL database.
+
+Access is gated by credentials authentication (Auth.js) with three roles —
+`ADMIN`, `OPERATOR`, `VIEWER` — and every recorded mutation is written to an
+append-only audit log. See [Authentication, roles & audit](#authentication-roles--audit).
 
 ## Tech stack
 
@@ -17,10 +21,10 @@ anywhere in the codebase or seed data. It runs on a hosted
 - **Zod 4** for all input validation (API bodies, forms, CSV rows) from a
   single shared schema module
 - **Recharts** for the dashboard visualizations
-- **Vitest** for unit tests, **Playwright** for an end-to-end test
+- **Auth.js** (NextAuth v5, credentials provider, JWT sessions) for
+  authentication, with **bcryptjs** password hashing
+- **Vitest** for unit tests, **Playwright** for end-to-end tests
 - A hand-rolled RFC4180 CSV parser/serializer (no external CSV dependency)
-
-No authentication is implemented — this is a single-user MVP.
 
 ## Getting started
 
@@ -35,18 +39,25 @@ cp .env.example .env
 #   DATABASE_URL  — pooled connection, used by the app at runtime
 #   DIRECT_URL    — direct (unpooled) connection, used by Prisma migrations
 
-# Apply the PostgreSQL migration to your database
+# Generate the local auth secrets & demo-account passwords into .env
+# (only fills in variables that are missing; never prints or overwrites values)
+npm run auth:init
+
+# Apply the PostgreSQL migrations to your database
 npm run db:migrate
 
-# Seed it with 72 realistic fictional return records
+# Seed it with 72 fictional return records + the ADMIN / VIEWER / OPERATOR accounts
 npm run db:seed
 
 # Start the dev server
 npm run dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000). The dashboard,
-returns list and charts will be populated from the seed data immediately.
+Then open [http://localhost:3000](http://localhost:3000) and sign in. The
+account emails default to `admin@returnops.local`, `operator@returnops.local`
+and `viewer@returnops.local`; the passwords are in your git-ignored `.env`
+(written by `npm run auth:init`). The dashboard, returns list and charts are
+populated from the seed data immediately.
 
 The seed is safe to re-run at any time — it replaces the `Return` table
 contents inside a single transaction with the same deterministic dataset, and
@@ -73,6 +84,7 @@ database — see [Architecture decisions](#architecture-decisions)).
 | `npm run db:migrate:dev` | Create + apply a new migration (`prisma migrate dev`)|
 | `npm run db:seed`        | Seed the database (`prisma db seed`)                 |
 | `npm run db:reset`       | Drop, re-migrate and re-seed the database (destructive) |
+| `npm run auth:init`      | Write missing auth env vars into `.env` (secret + demo passwords) |
 
 ## Features
 
@@ -142,6 +154,119 @@ value begins with a spreadsheet formula trigger (`= + - @`, tab, CR) is
 prefixed with a single quote so a return record can't smuggle a formula into
 a downstream spreadsheet (CSV injection).
 
+## Authentication, roles & audit
+
+### Authentication
+
+- **Auth.js (NextAuth v5)** with a single **Credentials** provider. There is
+  no public registration, password recovery or OAuth — by design.
+- Users live in the `User` table. Passwords are stored **only** as a bcrypt
+  hash (work factor 12); plaintext is never persisted or logged.
+- Sessions are **stateless JWTs** in an `HttpOnly`, `SameSite=Lax`,
+  `Secure`-in-production cookie, signed with `AUTH_SECRET`. This suits a
+  serverless deployment (no session table to read on every request).
+- **Generic login errors.** A wrong password, an unknown email, a disabled
+  account and a locked account all return the same "Invalid email or
+  password." message, and a bcrypt comparison runs on every path so response
+  time doesn't reveal whether an account exists.
+- **Brute-force protection that works in serverless.** Failed attempts are
+  counted on the `User` row; after 5 consecutive failures the account is
+  locked for 15 minutes. A successful login clears the counter. No in-memory
+  state, so it holds across cold starts and multiple instances.
+
+### Roles & permission matrix
+
+Authorization is **default-deny**: a permission is granted only if the role is
+explicitly listed for it in `lib/auth/permissions.ts`.
+
+| Capability | VIEWER | OPERATOR | ADMIN |
+| --- | :---: | :---: | :---: |
+| Dashboard, return list & detail, search, filters | ✅ | ✅ | ✅ |
+| CSV **export** of the filtered view | ✅ | ✅ | ✅ |
+| Create returns | — | ✅ | ✅ |
+| Edit returns | — | ✅ | ✅ |
+| Legal status transitions | — | ✅ | ✅ |
+| CSV **import** | — | ✅ | ✅ |
+| Audit log (page + API) | — | — | ✅ |
+| Any mutation not listed | — | — | — |
+
+### Where enforcement happens
+
+1. **`proxy.ts`** (Next.js 16's renamed Middleware) — an *optimistic*,
+   cookie-only check that redirects unauthenticated page requests to `/login`
+   and returns `401` for unauthenticated API calls. It never touches the
+   database and is **not** the only line of defence.
+2. **Every page** re-verifies the session (`requireUser` /
+   `requirePermission` in `lib/auth/guard.ts`); unauthorized users are sent to
+   `/login` or `/forbidden`.
+3. **Every API route and server mutation** independently calls `guard()`,
+   which returns a real `401` / `403`. Most reads check the session claim;
+   every mutation **and the audit trail** (`/audit` page + `GET /api/audit`)
+   pass `{ fresh: true }` to **re-load the user from the database** first, so a
+   revoked role or a disabled account takes effect on the next request even if
+   the session cookie is still valid.
+4. **UI actions** the current role can't perform are hidden (buttons, nav
+   links, the workflow panel), but that is cosmetic — the server checks stand
+   on their own. This is verified by e2e tests that call the API directly with
+   a VIEWER cookie and assert `403`.
+
+### Audit log
+
+- Append-only `AuditLog` table: `actorId` / `actorEmail` / `actorRole`,
+  `action`, `entityType`, `entityId`, redacted `metadata`, `createdAt`.
+- The migrations install Postgres triggers that **reject `UPDATE`, `DELETE`
+  and `TRUNCATE`** on the table, so the trail can't be rewritten or wiped by
+  any code path.
+- Successful **create**, **edit**, **status-change** and **CSV-import**
+  mutations each write one row, in the **same transaction** as the business
+  change (they commit or roll back together).
+- `metadata` is passed through `redactMetadata`: keys that look like secrets
+  (`pass`, `secret`, `token`, `hash`, `csv`, …) are dropped, long strings are
+  truncated and large arrays capped — so passwords, tokens and raw CSV
+  payloads never land in the trail. CSV imports record counts and the created
+  return references only.
+- `/audit` (ADMIN only) offers filtering by actor, action, entity id and date
+  range, with pagination.
+
+### Accounts created by the seed
+
+| Role | Default email | Purpose |
+| --- | --- | --- |
+| `ADMIN` | `admin@returnops.local` | Full access incl. the audit log |
+| `OPERATOR` | `operator@returnops.local` | Mutations, no audit access (optional — created only if `SEED_OPERATOR_*` is set) |
+| `VIEWER` | `viewer@returnops.local` | Read-only demo account |
+
+Credentials come from environment variables (see below) and exist only in the
+git-ignored `.env`. The seed **upserts** these accounts and never touches any
+other user, so it stays safe to re-run. For an account that already exists it
+refreshes only the display name and role — it will **not** reset the password
+or re-enable a disabled account. Set `SEED_RESET_CREDENTIALS=true` to force the
+password and active flag back to the `.env` baseline when rotating the demo
+credentials.
+
+### Environment variables
+
+Runtime / build:
+
+| Name | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Pooled Postgres connection (app runtime) |
+| `DIRECT_URL` | Direct Postgres connection (Prisma CLI / migrations) |
+| `AUTH_SECRET` | Signs the session JWT — **required**. `openssl rand -base64 32` |
+| `AUTH_URL` | Canonical app URL (`https://<your-app>` on Vercel) |
+
+Seed-only (needed for `npm run db:seed`, not at runtime):
+
+| Name | Purpose |
+| --- | --- |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME` | ADMIN account |
+| `SEED_VIEWER_EMAIL`, `SEED_VIEWER_PASSWORD`, `SEED_VIEWER_NAME` | VIEWER demo account |
+| `SEED_OPERATOR_EMAIL`, `SEED_OPERATOR_PASSWORD`, `SEED_OPERATOR_NAME` | OPERATOR account (optional) |
+
+Placeholders for all of these are in `.env.example`. **Only `DATABASE_URL`,
+`DIRECT_URL`, `AUTH_SECRET` and `AUTH_URL` need to be set on Vercel** — the
+`SEED_*` variables are used only when seeding a database.
+
 ## Architecture decisions
 
 - **Enums as `TEXT`.** `status` and `reason` are stored as plain `text`
@@ -203,26 +328,63 @@ a downstream spreadsheet (CSV injection).
   (mulberry32) so the fictional dataset is realistic-looking (skewed status
   distribution, weighted reasons, varied processing times) but reproducible
   across runs.
-- **No authentication.** Out of scope for this MVP by design — see the
-  project brief. Everything is single-tenant and unauthenticated.
+- **Credentials auth, JWT sessions, no adapter.** Auth.js runs with the
+  Credentials provider and the default JWT session strategy — no Prisma
+  adapter and no session table, which keeps every request a single cookie
+  verification with no database round-trip. The trade-off (a session can
+  outlive a role change) is handled by re-loading the user from the database
+  for every sensitive mutation (`guard(..., { fresh: true })`).
+- **Split auth config for the proxy.** `auth.config.ts` holds the
+  database-free configuration; `proxy.ts` builds its own `NextAuth` instance
+  from just that object, so the optimistic middleware check never imports
+  Prisma or bcrypt. The full provider (with `authorize`) lives in `auth.ts`,
+  used by route handlers and Server Components.
+- **Append-only audit at the database.** Beyond only ever calling
+  `auditLog.create`, the migration adds a trigger that raises on `UPDATE` /
+  `DELETE`, so the trail is tamper-evident regardless of application bugs.
+- **Migrations generated with `migrate diff`.** As with the PostgreSQL
+  baseline, the auth migration was produced with
+  `prisma migrate diff --from-config-datasource --to-schema … --script` and
+  applied with `prisma migrate deploy` (no shadow database, non-destructive),
+  then hand-extended with the audit trigger DDL.
 
 ## Testing
 
 ```bash
-npm run test        # unit tests: validation, CSV parsing, import logic, metrics
-npm run e2e          # Playwright: dashboard → browse/filter → create → advance
-                      # status → bulk import, against a real dev server + DB,
-                      # on desktop and mobile (Pixel 7) viewports
+npm run test        # unit tests: validation, CSV, metrics, permissions,
+                     # password hashing, lockout logic, audit redaction
+npm run e2e          # Playwright: auth + RBAC + audit + critical flow, against
+                     # a real dev server + DB, on desktop and mobile (Pixel 7)
 ```
 
 Unit tests cover the pure logic in `lib/` (Zod schemas, CSV parse/serialize,
 import row validation/deduplication, metrics aggregation, status-transition
-rules) without touching the database, so `npm run test` never connects to
-PostgreSQL. The Playwright suite exercises the whole stack end to end against
-whatever database `.env` points at, and is safe to re-run repeatedly — it
-generates a unique record suffix per run rather than relying on fixed IDs, so
-it never collides with itself or the seed data. Point `.env` at a disposable
-database (never a shared or production one) before running it.
+rules, the **permission matrix**, the **`guard()` authorization logic**
+(including the `{ fresh: true }` database re-check), **password hashing**, the
+**lockout** state machine, **callback-URL open-redirect sanitisation**, the
+**seed account upsert** rules and **audit metadata redaction**) without
+touching the database, so `npm run test` never connects to PostgreSQL.
+
+The Playwright suite (`e2e/auth.spec.ts` + `e2e/critical-flow.spec.ts`)
+exercises the whole stack end to end and covers:
+
+- valid / invalid login and the generic (non-enumerating) error
+- unauthenticated page redirects and `401` API responses
+- a forged session cookie treated as no session
+- an off-site `callbackUrl` (`https://…`, `//host`, `/\host`) cannot bounce the
+  user off-origin after login
+- VIEWER: mutation UI hidden, mutation pages `→ /forbidden`, and **direct API
+  calls rejected with `403`** (create, edit, status-change, import, audit)
+- OPERATOR: full create / edit / legal-transition / import workflow, illegal
+  transitions rejected `400`, audit access denied
+- ADMIN: audit page + API, filtering, and that the OPERATOR mutations above
+  produced audit rows with no raw CSV content
+- logout ending the session
+
+It needs the seeded accounts, so run `npm run auth:init && npm run db:seed`
+first, and point `.env` at a disposable database (never a shared or
+production one). The suite generates a unique record suffix per run, so it is
+safe to re-run.
 
 ## Known limitations
 
@@ -245,22 +407,60 @@ database (never a shared or production one) before running it.
 - The dashboard charts are rendered with Recharts (SVG) and are not fully
   screen-reader accessible; the same figures are shown as data labels on
   every bar.
+- **Auth known limitations:**
+  - Brute-force lockout is **per account**, not per IP — appropriate for a
+    small fixed set of internal users with no public registration to
+    enumerate, but it does not stop a distributed attack spread across many
+    accounts, and an attacker who knows an email can lock that user out for
+    15 minutes (a deliberate trade-off).
+  - No password rotation, expiry, complexity policy (beyond a 12-char seed
+    minimum), MFA, or "log out all devices" — out of scope per the brief.
+  - JWT sessions can't be revoked centrally before they expire. Every mutation
+    and the audit trail re-check the database, so a downgraded or disabled
+    account loses write access and audit access on its next request; but a
+    stale session can still *read* ordinary returns data (list, detail,
+    metrics, export) for the remainder of its lifetime. Reducing the session
+    `maxAge` is the lever if that matters.
+  - The failed-login counter is written on the wrong-password path but not on
+    the "no such user" path, so a real account's failed login is marginally
+    slower than an unknown email's. bcrypt dominates the response time, so this
+    is not a practical enumeration oracle for an internal tool with no public
+    sign-up.
+  - The audit log records mutations only (not reads or logins) and keeps a
+    single batch row per CSV import rather than one per imported record.
+  - Account management (create/disable/change-role) is done via the seed or
+    direct database access — there is no admin user-management UI.
+  - `next-auth` is on its v5 **beta** line (the only channel with Next.js 16
+    support); it is stable in practice but not yet a final release.
 
 ## Project structure
 
 ```
+auth.ts                 Auth.js instance (Credentials provider, authorize logic)
+auth.config.ts          DB-free Auth.js config shared with the proxy
+proxy.ts                Next.js 16 Proxy (optimistic route protection)
 app/                    Routes (App Router)
   page.tsx              Dashboard
+  login/                 Login page + sign-in / sign-out server actions
+  forbidden/             403 state for authenticated-but-not-permitted users
+  audit/                 ADMIN-only audit log (filters + pagination)
   returns/               Returns list, new/edit/detail, import wizard
+  api/auth/              Auth.js endpoints ([...nextauth])
   api/returns/           REST endpoints (list/create, get/patch, export, import)
   api/metrics/           Dashboard metrics endpoint
+  api/audit/             Audit log query endpoint (ADMIN only)
 components/
   dashboard/             Chart + stat card components
   returns/               Table, filters, pagination, form, workflow actions
   import/                CSV import wizard
+  audit/                 Audit table + filter bar
+  layout/                App shell, nav, user menu
   ui/                    Shared primitives (Button, Badge, PageHeader, empty/error states)
 lib/                    Framework-agnostic logic: validation, CSV, import,
                         metrics, Prisma client, query builders — all unit-tested
+  auth/                  Permission matrix, password hashing, lockout, guards
+  audit.ts               Audit writer + metadata redaction
+scripts/                init-local-auth-env.mjs (generate .env auth values)
 prisma/                 Schema, migrations, seed script
-e2e/                    Playwright end-to-end test
+e2e/                    Playwright end-to-end tests (auth + RBAC + critical flow)
 ```

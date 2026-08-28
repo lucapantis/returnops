@@ -11,6 +11,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../app/generated/prisma/client";
 import { RETURN_REASONS, RETURN_STATUSES, type ReturnReason, type ReturnStatus } from "../lib/constants";
 import { assertSeedableDatabaseUrl } from "../lib/dbGuard";
+import { hashPassword } from "../lib/auth/password";
+import type { Role } from "../lib/auth/permissions";
+import { buildUserUpsert } from "../lib/auth/seedAccounts";
 
 const connectionString = assertSeedableDatabaseUrl(process.env.DATABASE_URL);
 const adapter = new PrismaPg({ connectionString });
@@ -130,6 +133,77 @@ function daysAgo(days: number): Date {
   return new Date(Date.now() - days * DAY_MS);
 }
 
+// Upserts the required accounts from environment variables. Credentials live
+// only in the git-ignored `.env` (run `npm run auth:init` to generate them).
+// Re-running is safe: existing rows are never duplicated and no other users are
+// touched. For an account that already exists the seed refreshes only its name
+// and role — it does NOT reset the password or re-enable a disabled account
+// unless SEED_RESET_CREDENTIALS=true (used only when rotating demo credentials).
+async function seedUsers() {
+  const resetCredentials = process.env.SEED_RESET_CREDENTIALS === "true";
+  const specs: {
+    email?: string;
+    password?: string;
+    name?: string;
+    role: Role;
+    envPrefix: string;
+  }[] = [
+    {
+      email: process.env.SEED_ADMIN_EMAIL,
+      password: process.env.SEED_ADMIN_PASSWORD,
+      name: process.env.SEED_ADMIN_NAME ?? "ReturnOps Admin",
+      role: "ADMIN",
+      envPrefix: "SEED_ADMIN",
+    },
+    {
+      email: process.env.SEED_VIEWER_EMAIL,
+      password: process.env.SEED_VIEWER_PASSWORD,
+      name: process.env.SEED_VIEWER_NAME ?? "ReturnOps Viewer (demo)",
+      role: "VIEWER",
+      envPrefix: "SEED_VIEWER",
+    },
+  ];
+
+  // An OPERATOR account is only provisioned if its credentials are present —
+  // it isn't required for the deployment, but the test suite and day-to-day
+  // operations use one.
+  if (process.env.SEED_OPERATOR_EMAIL || process.env.SEED_OPERATOR_PASSWORD) {
+    specs.push({
+      email: process.env.SEED_OPERATOR_EMAIL,
+      password: process.env.SEED_OPERATOR_PASSWORD,
+      name: process.env.SEED_OPERATOR_NAME ?? "ReturnOps Operator",
+      role: "OPERATOR",
+      envPrefix: "SEED_OPERATOR",
+    });
+  }
+
+  for (const spec of specs) {
+    if (!spec.email || !spec.password) {
+      throw new Error(
+        `${spec.envPrefix}_EMAIL and ${spec.envPrefix}_PASSWORD must be set in .env ` +
+          `before seeding. Run: node scripts/init-local-auth-env.mjs`
+      );
+    }
+    if (spec.password.length < 12) {
+      throw new Error(`${spec.envPrefix}_PASSWORD must be at least 12 characters.`);
+    }
+
+    const email = spec.email.trim().toLowerCase();
+    const passwordHash = await hashPassword(spec.password);
+
+    const { create, update } = buildUserUpsert(
+      { email, name: spec.name!, role: spec.role },
+      passwordHash,
+      { resetCredentials }
+    );
+
+    await prisma.user.upsert({ where: { email }, create, update });
+
+    const note = "passwordHash" in update ? " (credentials reset)" : "";
+    console.log(`  ${spec.role.padEnd(8)} ${email}${note}`);
+  }
+}
+
 async function main() {
   console.log("Seeding ReturnOps demo data...");
 
@@ -189,6 +263,9 @@ async function main() {
     (s) => `${s}: ${rows.filter((r) => r.status === s).length}`
   );
   console.log(statusCounts.join(", "));
+
+  console.log("Seeding accounts...");
+  await seedUsers();
 }
 
 main()

@@ -1,10 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { STORAGE_STATE } from "./roles";
 
 // Exercises the core ReturnOps workflow end to end against the seeded dev
 // database: dashboard -> browse/filter returns -> create a return -> advance
 // its status -> bulk import via CSV. Uses a per-run unique suffix so the
 // suite is safe to re-run without hitting duplicate-record conflicts.
 const runId = Date.now();
+
+// The whole flow requires mutation rights — run it as an OPERATOR.
+test.use({ storageState: STORAGE_STATE.operator });
 
 test.describe("ReturnOps critical flow", () => {
   test("dashboard renders metrics from seeded data", async ({ page }) => {

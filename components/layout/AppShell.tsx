@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { NavLinks } from "./NavLinks";
+import { UserMenu, type SessionUserView } from "./UserMenu";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  user,
+  children,
+}: {
+  user: SessionUserView | null;
+  children: React.ReactNode;
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -16,17 +23,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen]);
 
+  // Unauthenticated (e.g. the login page): render a bare, centered canvas with
+  // no navigation chrome.
+  if (!user) {
+    return <div className="min-h-screen">{children}</div>;
+  }
+
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white md:flex md:flex-col">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
         <Brand />
         <div className="mt-4 flex-1">
-          <NavLinks />
+          <NavLinks role={user.role} />
         </div>
-        <div className="border-t border-slate-200 p-4 text-xs text-slate-500">
-          ReturnOps MVP · fictional demo data
-        </div>
+        <UserMenu user={user} />
       </aside>
 
       {/* Mobile drawer */}
@@ -40,8 +51,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <aside className="relative flex h-full w-64 flex-col bg-white shadow-xl">
             <Brand />
             <div className="mt-4 flex-1">
-              <NavLinks onNavigate={() => setMobileOpen(false)} />
+              <NavLinks role={user.role} onNavigate={() => setMobileOpen(false)} />
             </div>
+            <UserMenu user={user} />
           </aside>
         </div>
       )}
@@ -59,6 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </svg>
           </button>
           <span className="text-sm font-semibold text-slate-900">ReturnOps</span>
+          <span className="ml-auto text-xs text-slate-500">{user.name}</span>
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>

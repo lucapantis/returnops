@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { LinkButton } from "@/components/ui/Button";
 import { StatusBadge, ReasonBadge } from "@/components/ui/Badge";
 import { StatusWorkflowActions } from "@/components/returns/StatusWorkflowActions";
+import { requireUser } from "@/lib/auth/guard";
+import { can } from "@/lib/auth/permissions";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -30,6 +32,10 @@ export default async function ReturnDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await requireUser();
+  const canEdit = can(user.role, "returns:edit");
+  const canTransition = can(user.role, "returns:transition");
+
   const { id } = await params;
   const record = await prisma.return.findUnique({ where: { id } });
 
@@ -49,7 +55,9 @@ export default async function ReturnDetailPage({
             <LinkButton href="/returns" variant="secondary">
               Back to returns
             </LinkButton>
-            <LinkButton href={`/returns/${r.id}/edit`}>Edit</LinkButton>
+            {canEdit && (
+              <LinkButton href={`/returns/${r.id}/edit`}>Edit</LinkButton>
+            )}
           </>
         }
       />
@@ -85,12 +93,14 @@ export default async function ReturnDetailPage({
           </section>
         </div>
 
-        <div className="space-y-6">
-          <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Advance workflow</h2>
-            <StatusWorkflowActions id={r.id} status={r.status} />
-          </section>
-        </div>
+        {canTransition && (
+          <div className="space-y-6">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <h2 className="mb-3 text-sm font-semibold text-slate-900">Advance workflow</h2>
+              <StatusWorkflowActions id={r.id} status={r.status} />
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

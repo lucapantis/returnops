@@ -30,3 +30,60 @@ model Return {
   @@index([receivedDate])
   @@index([orderNumber])
 }
+
+// Application roles. Authorization is default-deny: a permission is granted
+// only if the role explicitly appears in the matrix in lib/auth/permissions.ts.
+enum Role {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+// Credentials-based application users. There is no public registration —
+// accounts are created only by the seed script or an admin-run script.
+// Passwords are never stored in plaintext; only a bcrypt hash is kept.
+model User {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  name                String
+  passwordHash        String
+  role                Role      @default(VIEWER)
+  // A disabled user cannot authenticate and every sensitive mutation
+  // re-checks this flag so a revoked account can't ride an existing session.
+  isActive            Boolean   @default(true)
+  // Serverless-safe brute-force protection: failed attempts are counted in
+  // the database and the account is locked until `lockedUntil` once the
+  // threshold is hit. Both reset on a successful login.
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@index([email])
+}
+
+// Append-only audit trail. Rows are only ever inserted — the migration adds a
+// database trigger that rejects UPDATE and DELETE — and business mutations
+// write their audit row in the same transaction. Metadata holds a redacted
+// before/after snapshot only; never passwords, secrets or raw CSV content.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String
+  actorRole  Role?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([actorEmail])
+}

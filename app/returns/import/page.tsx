@@ -1,7 +1,10 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ImportWizard } from "@/components/import/ImportWizard";
+import { requirePermission } from "@/lib/auth/guard";
 
-export default function ImportReturnsPage() {
+export default async function ImportReturnsPage() {
+  await requirePermission("returns:import");
+
   return (
     <div>
       <PageHeader

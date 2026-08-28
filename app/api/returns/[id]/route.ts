@@ -4,12 +4,17 @@ import { serializeReturn } from "@/lib/serialize";
 import { updateReturnSchema } from "@/lib/validation";
 import { isValidTransition, type ReturnStatus } from "@/lib/constants";
 import { handleApiError } from "@/lib/apiError";
+import { guard } from "@/lib/auth/guard";
+import { auditCreateArgs, type AuditAction } from "@/lib/audit";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
+  const authz = await guard("returns:read");
+  if (!authz.ok) return authz.response;
+
   const { id } = await params;
 
   try {
@@ -44,6 +49,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const data = parsed.data;
+
+  // A status-only PATCH needs `returns:transition`; touching any other field
+  // needs `returns:edit`. Both belong to OPERATOR+, but keep the distinction
+  // explicit so the permission model stays honest.
+  const keys = Object.keys(data);
+  const statusOnly = keys.length === 1 && keys[0] === "status";
+  const authz = await guard(statusOnly ? "returns:transition" : "returns:edit", {
+    fresh: true,
+  });
+  if (!authz.ok) return authz.response;
+  const actor = authz.user;
 
   try {
     const existing = await prisma.return.findUnique({ where: { id } });
@@ -94,19 +110,44 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const updated = await prisma.return.update({
-      where: { id },
-      data: {
-        ...(data.orderNumber !== undefined ? { orderNumber: data.orderNumber } : {}),
-        ...(data.productName !== undefined ? { productName: data.productName } : {}),
-        ...(data.sku !== undefined ? { sku: data.sku } : {}),
-        ...(data.customerName !== undefined ? { customerName: data.customerName } : {}),
-        ...(data.reason !== undefined ? { reason: data.reason } : {}),
-        ...(data.status !== undefined ? { status: data.status } : {}),
-        ...(data.receivedDate !== undefined ? { receivedDate: data.receivedDate } : {}),
-        ...(completedDate !== undefined ? { completedDate } : {}),
-        ...(data.operatorNotes !== undefined ? { operatorNotes: data.operatorNotes } : {}),
-      },
+    const statusChanged = Boolean(data.status && data.status !== existing.status);
+    const action: AuditAction = statusChanged
+      ? "return.status_change"
+      : "return.update";
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.return.update({
+        where: { id },
+        data: {
+          ...(data.orderNumber !== undefined ? { orderNumber: data.orderNumber } : {}),
+          ...(data.productName !== undefined ? { productName: data.productName } : {}),
+          ...(data.sku !== undefined ? { sku: data.sku } : {}),
+          ...(data.customerName !== undefined ? { customerName: data.customerName } : {}),
+          ...(data.reason !== undefined ? { reason: data.reason } : {}),
+          ...(data.status !== undefined ? { status: data.status } : {}),
+          ...(data.receivedDate !== undefined ? { receivedDate: data.receivedDate } : {}),
+          ...(completedDate !== undefined ? { completedDate } : {}),
+          ...(data.operatorNotes !== undefined ? { operatorNotes: data.operatorNotes } : {}),
+        },
+      });
+
+      await tx.auditLog.create(
+        auditCreateArgs({
+          actor,
+          action,
+          entityType: "Return",
+          entityId: row.id,
+          metadata: {
+            returnRef: row.returnRef,
+            fields: keys,
+            ...(statusChanged
+              ? { statusFrom: existing.status, statusTo: row.status }
+              : {}),
+          },
+        })
+      );
+
+      return row;
     });
 
     return NextResponse.json({ data: serializeReturn(updated) });
