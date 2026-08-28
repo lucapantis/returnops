@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OpsFlow — Returns Management",
+  title: "ReturnOps — Returns Management",
   description:
-    "OpsFlow is a fictional returns and operational-record management system for logistics teams.",
+    "ReturnOps is a fictional returns and operational-record management system for logistics teams.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

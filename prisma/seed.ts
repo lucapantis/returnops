@@ -123,7 +123,7 @@ function daysAgo(days: number): Date {
 }
 
 async function main() {
-  console.log("Seeding OpsFlow demo data...");
+  console.log("Seeding ReturnOps demo data...");
 
   await prisma.return.deleteMany();
 

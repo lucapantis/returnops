@@ -16,7 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavLinks />
         </div>
         <div className="border-t border-slate-200 p-4 text-xs text-slate-400">
-          OpsFlow MVP · fictional demo data
+          ReturnOps MVP · fictional demo data
         </div>
       </aside>
 
@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-slate-900">OpsFlow</span>
+          <span className="text-sm font-semibold text-slate-900">ReturnOps</span>
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
@@ -62,10 +62,10 @@ function Brand() {
   return (
     <Link href="/" className="flex items-center gap-2 px-5 py-5">
       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">
-        O
+        R
       </span>
       <span className="text-base font-semibold tracking-tight text-slate-900">
-        OpsFlow
+        ReturnOps
       </span>
     </Link>
   );

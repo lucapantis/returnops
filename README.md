@@ -1,6 +1,6 @@
-# OpsFlow
+# ReturnOps
 
-OpsFlow is a returns and operational-record management system: a single-tenant
+ReturnOps is a returns and operational-record management system: a single-tenant
 dashboard for logging, tracking and reporting on product returns through a
 fixed inspection-and-resolution workflow. It's a local MVP built with fully
 fictional demo data — no real company, customer or order information is used

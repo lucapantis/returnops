@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   });
 
   const csv = toCsv(EXPORT_COLUMNS, records.map(serializeReturn));
-  const filename = `opsflow-returns-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `returnops-returns-${new Date().toISOString().slice(0, 10)}.csv`;
 
   return new NextResponse(csv, {
     status: 200,

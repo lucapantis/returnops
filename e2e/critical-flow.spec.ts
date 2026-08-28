@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-// Exercises the core OpsFlow workflow end to end against the seeded dev
+// Exercises the core ReturnOps workflow end to end against the seeded dev
 // database: dashboard -> browse/filter returns -> create a return -> advance
 // its status -> bulk import via CSV. Uses a per-run unique suffix so the
 // suite is safe to re-run without hitting duplicate-record conflicts.
 const runId = Date.now();
 
-test.describe("OpsFlow critical flow", () => {
+test.describe("ReturnOps critical flow", () => {
   test("dashboard renders metrics from seeded data", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
