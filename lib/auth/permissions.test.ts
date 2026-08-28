@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { can, permissionsFor, PERMISSIONS, type Permission } from "./permissions";
+import {
+  can,
+  permissionsFor,
+  PERMISSIONS,
+  DEMO_PERMISSIONS,
+  type Permission,
+} from "./permissions";
 
 describe("permission matrix", () => {
   it("VIEWER can only read and export", () => {
@@ -41,5 +47,44 @@ describe("permission matrix", () => {
   it("every OPERATOR permission is also an ADMIN permission", () => {
     const admin = new Set(permissionsFor("ADMIN"));
     for (const p of permissionsFor("OPERATOR")) expect(admin.has(p)).toBe(true);
+  });
+});
+
+describe("demo account restriction", () => {
+  it("a demo VIEWER may only read — no export, no mutations, no audit", () => {
+    expect(can("VIEWER", "returns:read", { isDemo: true })).toBe(true);
+    for (const p of [
+      "returns:export",
+      "returns:create",
+      "returns:edit",
+      "returns:transition",
+      "returns:import",
+      "audit:read",
+    ] as Permission[]) {
+      expect(can("VIEWER", p, { isDemo: true })).toBe(false);
+    }
+  });
+
+  it("the demo flag can never escalate a role beyond its own grant", () => {
+    // Even if a demo session somehow carried an ADMIN role, the intersection
+    // with DEMO_PERMISSIONS keeps it read-only.
+    expect(can("ADMIN", "returns:create", { isDemo: true })).toBe(false);
+    expect(can("ADMIN", "audit:read", { isDemo: true })).toBe(false);
+    expect(can("ADMIN", "returns:read", { isDemo: true })).toBe(true);
+  });
+
+  it("DEMO_PERMISSIONS is a strict subset of the VIEWER grant", () => {
+    const viewer = new Set(permissionsFor("VIEWER"));
+    for (const p of DEMO_PERMISSIONS) expect(viewer.has(p)).toBe(true);
+    expect(DEMO_PERMISSIONS.length).toBeLessThan(viewer.size);
+  });
+
+  it("permissionsFor reflects the demo narrowing", () => {
+    expect(permissionsFor("VIEWER", { isDemo: true })).toEqual(["returns:read"]);
+  });
+
+  it("non-demo callers are unaffected", () => {
+    expect(can("VIEWER", "returns:export")).toBe(true);
+    expect(can("VIEWER", "returns:export", { isDemo: false })).toBe(true);
   });
 });

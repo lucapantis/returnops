@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/guard";
 import { safeCallbackUrl } from "@/lib/auth/callbackUrl";
+import { isDemoLoginConfigured } from "@/lib/auth/demo";
 import { LoginForm } from "./LoginForm";
 
 export const metadata: Metadata = {
@@ -11,12 +12,12 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; expired?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; expired?: string; demo?: string }>;
 }) {
   const user = await getSessionUser();
   if (user) redirect("/");
 
-  const { callbackUrl, expired } = await searchParams;
+  const { callbackUrl, expired, demo } = await searchParams;
 
   return (
     <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
@@ -42,8 +43,20 @@ export default async function LoginPage({
           </div>
         )}
 
+        {demo === "unavailable" && (
+          <div
+            role="status"
+            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          >
+            The demo isn&apos;t available right now. Please try again later.
+          </div>
+        )}
+
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <LoginForm callbackUrl={safeCallbackUrl(callbackUrl)} />
+          <LoginForm
+            callbackUrl={safeCallbackUrl(callbackUrl)}
+            demoEnabled={isDemoLoginConfigured()}
+          />
         </div>
 
         <p className="mt-4 text-center text-xs text-slate-400">

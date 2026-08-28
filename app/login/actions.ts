@@ -1,6 +1,7 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
 import { safeCallbackUrl } from "@/lib/auth/callbackUrl";
 
@@ -29,6 +30,34 @@ export async function loginAction(
   }
 
   return {};
+}
+
+/**
+ * Sign in as the public portfolio demo account. The credentials never leave
+ * the server — they are read from `DEMO_USER_*` env vars here and passed
+ * straight to Auth.js. The account is a VIEWER further clamped to read-only,
+ * non-export access (see `lib/auth/demo.ts` and `lib/auth/guard.ts`).
+ *
+ * On success Auth.js throws a redirect to `/`. Any failure sends the user back
+ * to `/login?demo=unavailable`, which renders a short notice — no credential
+ * detail is ever surfaced.
+ */
+export async function demoLoginAction(): Promise<void> {
+  const email = process.env.DEMO_USER_EMAIL;
+  const password = process.env.DEMO_USER_PASSWORD;
+
+  if (!email || !password) {
+    redirect("/login?demo=unavailable");
+  }
+
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/" });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      redirect("/login?demo=unavailable");
+    }
+    throw error;
+  }
 }
 
 export async function logoutAction(): Promise<void> {

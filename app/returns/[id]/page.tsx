@@ -33,8 +33,10 @@ export default async function ReturnDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await requireUser();
-  const canEdit = can(user.role, "returns:edit");
-  const canTransition = can(user.role, "returns:transition");
+  const canEdit = can(user.role, "returns:edit", { isDemo: user.isDemo });
+  const canTransition = can(user.role, "returns:transition", {
+    isDemo: user.isDemo,
+  });
 
   const { id } = await params;
   const record = await prisma.return.findUnique({ where: { id } });
